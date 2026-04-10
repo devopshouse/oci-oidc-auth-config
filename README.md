@@ -55,7 +55,7 @@ In your repository go to **Settings → Secrets and variables → Actions → Ne
 }
 ```
 
-> **Tip** — Use an [OCI Vault secret](https://docs.oracle.com/en-us/iaas/Content/KeyManagement/Concepts/keyoverview.htm) or a GitHub Environment to scope access to specific branches/environments.
+> **Tip** — Use a [GitHub Environment](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment) to scope `OCI_CONFIG_JSON` to specific branches or require manual approval before deployments.
 
 ---
 
