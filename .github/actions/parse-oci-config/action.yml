@@ -1,0 +1,59 @@
+name: Parse OCI Integration Config
+description: >
+  Parses the OCI_INTEGRATION_CONFIG_JSON secret and exposes each field as
+  an individual step output, masking sensitive values in the log.
+
+inputs:
+  config_json:
+    description: >
+      JSON string containing OCI connection parameters.
+      Required keys: oci_idcs_endpoint, oci_client_id, oci_client_secret,
+      oci_region, oci_tenancy_id, oci_compartment_id.
+    required: true
+
+outputs:
+  oci_idcs_endpoint:
+    description: IDCS identity domain URL
+    value: ${{ steps.parse.outputs.oci_idcs_endpoint }}
+  oci_client_id:
+    description: OAuth2 confidential application client ID
+    value: ${{ steps.parse.outputs.oci_client_id }}
+  oci_client_secret:
+    description: OAuth2 confidential application client secret
+    value: ${{ steps.parse.outputs.oci_client_secret }}
+  oci_region:
+    description: OCI region identifier
+    value: ${{ steps.parse.outputs.oci_region }}
+  oci_tenancy_id:
+    description: Tenancy OCID
+    value: ${{ steps.parse.outputs.oci_tenancy_id }}
+  oci_compartment_id:
+    description: Compartment OCID used as OCI CLI default
+    value: ${{ steps.parse.outputs.oci_compartment_id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Parse and validate config
+      id: parse
+      shell: bash
+      env:
+        CONFIG_JSON: ${{ inputs.config_json }}
+      run: |
+        set -euo pipefail
+
+        missing=0
+        for key in oci_idcs_endpoint oci_client_id oci_client_secret oci_region oci_tenancy_id oci_compartment_id; do
+          value="$(jq -r --arg k "$key" '.[$k] // empty' <<< "$CONFIG_JSON")"
+
+          if [ -z "$value" ]; then
+            echo "::error::Missing required key in config_json: ${key}"
+            missing=1
+            continue
+          fi
+
+          echo "::add-mask::$value"
+          echo "${key}=${value}" >> "$GITHUB_OUTPUT"
+        done
+
+        [ "$missing" -eq 0 ] || exit 1

@@ -1,0 +1,56 @@
+# Example: Terraform with OCI provider using GitHub OIDC authentication
+# Copy this file to .github/workflows/ in your repository.
+
+name: Terraform — OCI Keyless Auth Example
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # Required to request a GitHub OIDC token
+
+jobs:
+  terraform:
+    name: Terraform plan / apply
+    runs-on: ubuntu-latest
+    environment: production   # Optional: use a GitHub Environment for approval gates
+
+    defaults:
+      run:
+        working-directory: infra   # Adjust to your Terraform root module path
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup OCI OIDC Auth
+        id: oci
+        uses: devopshouse/oci-oidc-auth-config@v1
+        with:
+          config_json: ${{ secrets.OCI_CONFIG_JSON }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: |
+          terraform plan -input=false \
+            -var="region=${{ steps.oci.outputs.oci_region }}" \
+            -var="compartment_id=${{ steps.oci.outputs.oci_compartment_id }}"
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          terraform apply -input=false -auto-approve \
+            -var="region=${{ steps.oci.outputs.oci_region }}" \
+            -var="compartment_id=${{ steps.oci.outputs.oci_compartment_id }}"

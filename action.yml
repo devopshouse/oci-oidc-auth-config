@@ -1,0 +1,146 @@
+name: Setup OCI OIDC Auth
+description: >
+  Exchanges a GitHub OIDC token for an OCI UPST (User Principal Security Token),
+  writes ~/.oci/config, installs the OCI CLI, and configures the environment for
+  OCI API access — no long-lived credentials required.
+author: Ready Tecnologia
+
+branding:
+  icon: lock
+  color: red
+
+inputs:
+  config_json:
+    description: >
+      JSON string containing all OCI connection parameters.
+      Required keys: oci_idcs_endpoint, oci_client_id, oci_client_secret,
+      oci_region, oci_tenancy_id, oci_compartment_id.
+      When provided, individual OCI inputs are ignored.
+    required: false
+    default: ''
+  oci_idcs_endpoint:
+    description: >
+      IDCS identity domain URL (e.g. https://<domain>.identity.oraclecloud.com).
+      Used only when config_json is not provided.
+    required: false
+    default: ''
+  oci_client_id:
+    description: >
+      OAuth2 confidential application client ID.
+      Used only when config_json is not provided.
+    required: false
+    default: ''
+  oci_client_secret:
+    description: >
+      OAuth2 confidential application client secret.
+      Used only when config_json is not provided.
+    required: false
+    default: ''
+  oci_region:
+    description: >
+      OCI region identifier (e.g. sa-saopaulo-1).
+      Used only when config_json is not provided.
+    required: false
+    default: ''
+  oci_tenancy_id:
+    description: >
+      Tenancy OCID.
+      Used only when config_json is not provided.
+    required: false
+    default: ''
+  oci_compartment_id:
+    description: >
+      Compartment OCID.
+      Used only when config_json is not provided.
+    required: false
+    default: ''
+  oidc_audience:
+    description: Audience claim for the GitHub OIDC token
+    required: false
+    default: 'https://cloud.oracle.com'
+  oci_profile:
+    description: OCI config profile name written to ~/.oci/config
+    required: false
+    default: DEFAULT
+
+outputs:
+  oci_region:
+    description: OCI region identifier
+    value: ${{ steps.resolve.outputs.oci_region }}
+  oci_tenancy_id:
+    description: Tenancy OCID
+    value: ${{ steps.resolve.outputs.oci_tenancy_id }}
+  oci_compartment_id:
+    description: Compartment OCID
+    value: ${{ steps.resolve.outputs.oci_compartment_id }}
+  oci_idcs_endpoint:
+    description: IDCS identity domain URL
+    value: ${{ steps.resolve.outputs.oci_idcs_endpoint }}
+
+runs:
+  using: composite
+  steps:
+    - name: Parse OCI config from JSON
+      id: parse
+      if: ${{ inputs.config_json != '' }}
+      uses: ./.github/actions/parse-oci-config
+      with:
+        config_json: ${{ inputs.config_json }}
+
+    - name: Resolve OCI parameters
+      id: resolve
+      shell: bash
+      env:
+        # Values from JSON parsing (empty when config_json was not provided)
+        JSON_OCI_IDCS_ENDPOINT: ${{ steps.parse.outputs.oci_idcs_endpoint }}
+        JSON_OCI_CLIENT_ID: ${{ steps.parse.outputs.oci_client_id }}
+        JSON_OCI_CLIENT_SECRET: ${{ steps.parse.outputs.oci_client_secret }}
+        JSON_OCI_REGION: ${{ steps.parse.outputs.oci_region }}
+        JSON_OCI_TENANCY_ID: ${{ steps.parse.outputs.oci_tenancy_id }}
+        JSON_OCI_COMPARTMENT_ID: ${{ steps.parse.outputs.oci_compartment_id }}
+        # Values from individual inputs
+        INPUT_OCI_IDCS_ENDPOINT: ${{ inputs.oci_idcs_endpoint }}
+        INPUT_OCI_CLIENT_ID: ${{ inputs.oci_client_id }}
+        INPUT_OCI_CLIENT_SECRET: ${{ inputs.oci_client_secret }}
+        INPUT_OCI_REGION: ${{ inputs.oci_region }}
+        INPUT_OCI_TENANCY_ID: ${{ inputs.oci_tenancy_id }}
+        INPUT_OCI_COMPARTMENT_ID: ${{ inputs.oci_compartment_id }}
+      run: |
+        set -euo pipefail
+
+        # config_json takes precedence; fall back to individual inputs
+        oci_idcs_endpoint="${JSON_OCI_IDCS_ENDPOINT:-${INPUT_OCI_IDCS_ENDPOINT}}"
+        oci_client_id="${JSON_OCI_CLIENT_ID:-${INPUT_OCI_CLIENT_ID}}"
+        oci_client_secret="${JSON_OCI_CLIENT_SECRET:-${INPUT_OCI_CLIENT_SECRET}}"
+        oci_region="${JSON_OCI_REGION:-${INPUT_OCI_REGION}}"
+        oci_tenancy_id="${JSON_OCI_TENANCY_ID:-${INPUT_OCI_TENANCY_ID}}"
+        oci_compartment_id="${JSON_OCI_COMPARTMENT_ID:-${INPUT_OCI_COMPARTMENT_ID}}"
+
+        missing=0
+        for key in oci_idcs_endpoint oci_client_id oci_client_secret oci_region oci_tenancy_id oci_compartment_id; do
+          value="${!key}"
+          if [ -z "$value" ]; then
+            echo "::error::Missing required OCI parameter '${key}'. Supply it via the 'config_json' input or as the individual '${key}' input."
+            missing=1
+          fi
+        done
+        [ "$missing" -eq 0 ] || exit 1
+
+        echo "oci_idcs_endpoint=${oci_idcs_endpoint}" >> "$GITHUB_OUTPUT"
+        echo "oci_client_id=${oci_client_id}"         >> "$GITHUB_OUTPUT"
+        echo "oci_client_secret=${oci_client_secret}" >> "$GITHUB_OUTPUT"
+        echo "oci_region=${oci_region}"               >> "$GITHUB_OUTPUT"
+        echo "oci_tenancy_id=${oci_tenancy_id}"       >> "$GITHUB_OUTPUT"
+        echo "oci_compartment_id=${oci_compartment_id}" >> "$GITHUB_OUTPUT"
+
+    - name: Setup OCI OIDC auth
+      uses: ./.github/actions/setup-oci-oidc-auth
+      with:
+        oci_idcs_endpoint: ${{ steps.resolve.outputs.oci_idcs_endpoint }}
+        oci_client_id: ${{ steps.resolve.outputs.oci_client_id }}
+        oci_client_secret: ${{ steps.resolve.outputs.oci_client_secret }}
+        oci_tenancy_id: ${{ steps.resolve.outputs.oci_tenancy_id }}
+        oci_region: ${{ steps.resolve.outputs.oci_region }}
+        oci_compartment_id: ${{ steps.resolve.outputs.oci_compartment_id }}
+        oidc_audience: ${{ inputs.oidc_audience }}
+        oci_profile: ${{ inputs.oci_profile }}
