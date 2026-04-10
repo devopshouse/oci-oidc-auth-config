@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.0.0...v1.0.1) (2026-04-10)
+
+
+### 📚 Documentation
+
+* fix misleading tip about OCI Vault in README ([2d82939](https://github.com/devopshouse/oci-oidc-auth-config/commit/2d829397742902f18712baeeb0327125f2d619c0))
+
 ## [1.1.3](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.1.2...v1.1.3) (2026-04-10)
 
 
