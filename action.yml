@@ -1,9 +1,6 @@
 name: Setup OCI OIDC Auth
-description: >
-  Exchanges a GitHub OIDC token for an OCI UPST (User Principal Security Token),
-  writes ~/.oci/config, installs the OCI CLI, and configures the environment for
-  OCI API access — no long-lived credentials required.
-author: Ready Tecnologia
+description: Keyless OCI auth via OIDC — exchanges GitHub JWT for OCI UPST, writes ~/.oci/config, and installs the OCI CLI.
+author: devopshouse
 
 branding:
   icon: lock
