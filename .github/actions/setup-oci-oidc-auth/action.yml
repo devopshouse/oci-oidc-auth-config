@@ -163,7 +163,7 @@ runs:
     # ── install-oci-cli ───────────────────────────────────────────────────────
     - name: Restore OCI CLI cache
       id: cache-oci-cli
-      uses: actions/cache/restore@v5
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: |
           ~/.local/bin
@@ -179,7 +179,7 @@ runs:
 
     - name: Save OCI CLI cache
       if: steps.cache-oci-cli.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v5
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: |
           ~/.local/bin
