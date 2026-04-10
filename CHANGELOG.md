@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.1.2...v1.1.3) (2026-04-10)
+
+
+### 🔩 Miscellaneous
+
+* add MIT license ([adf222f](https://github.com/devopshouse/oci-oidc-auth-config/commit/adf222f87d50212d2958382dc3b910b3c02c848b))
+
 ## [1.1.2](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.1.1...v1.1.2) (2026-04-10)
 
 
