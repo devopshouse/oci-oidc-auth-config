@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.1.1...v1.1.2) (2026-04-10)
+
+
+### 🔧 CI/CD
+
+* pin all GitHub Actions to SHA for supply chain security ([f6a320c](https://github.com/devopshouse/oci-oidc-auth-config/commit/f6a320c2eaaf88302212cc614b55dadc76d43f99))
+
 ## [1.1.1](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.1.0...v1.1.1) (2026-04-10)
 
 
