@@ -224,7 +224,6 @@ This action follows [Semantic Versioning](https://semver.org/).
 The [`examples/`](examples/) folder contains:
 
 - [`oci-oidc-configuration/`](examples/oci-oidc-configuration/) — Terraform module to provision the OCI IDCS app, service user, and IAM policy required by this action
-- [`main.tf`](examples/main.tf) — Terraform module used by the internal integration test
 - [`workflows/basic-oci-cli.yml`](examples/workflows/basic-oci-cli.yml) — OCI CLI example workflow
 - [`workflows/terraform.yml`](examples/workflows/terraform.yml) — Terraform example workflow
 

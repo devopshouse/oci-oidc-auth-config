@@ -10,7 +10,6 @@ This folder contains working examples that demonstrate how to use
 | Path | Description |
 |------|-------------|
 | [`oci-oidc-configuration/`](oci-oidc-configuration/) | Terraform module to provision the OCI IDCS app, service user, and IAM policy required by this action |
-| [`main.tf`](main.tf) | Terraform module used by the internal integration test (lists availability domains and compute instances) |
 | [`workflows/basic-oci-cli.yml`](workflows/basic-oci-cli.yml) | Copy-paste workflow — OCI CLI with keyless auth |
 | [`workflows/terraform.yml`](workflows/terraform.yml) | Copy-paste workflow — Terraform plan/apply with OCI provider |
 
