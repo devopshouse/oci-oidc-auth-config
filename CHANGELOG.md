@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.0.2...v1.0.3) (2026-04-10)
+
+
+### 🔩 Miscellaneous
+
+* remove examples/main.tf integration test module ([d8340f0](https://github.com/devopshouse/oci-oidc-auth-config/commit/d8340f093f4fa85d0adcb03f4e5f52646d27cdd7))
+
 ## [1.0.2](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.0.1...v1.0.2) (2026-04-10)
 
 
