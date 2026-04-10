@@ -1,0 +1,35 @@
+# Example: Basic OCI CLI usage with GitHub OIDC authentication
+# Copy this file to .github/workflows/ in your repository.
+
+name: OCI CLI — Keyless Auth Example
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # Required to request a GitHub OIDC token
+
+jobs:
+  oci-cli-example:
+    name: Run OCI CLI commands
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup OCI OIDC Auth
+        id: oci
+        uses: devopshouse/oci-oidc-auth-config@v1
+        with:
+          config_json: ${{ secrets.OCI_CONFIG_JSON }}
+
+      # After this step the OCI CLI is installed, configured, and authenticated.
+      # OCI_CLI_AUTH=security_token is set in the environment automatically.
+
+      - name: List compute instances
+        run: oci compute instance list --region "${{ steps.oci.outputs.oci_region }}"
+
+      - name: List availability domains
+        run: |
+          oci iam availability-domain list \
+            --compartment-id "${{ steps.oci.outputs.oci_compartment_id }}" \
+            --region "${{ steps.oci.outputs.oci_region }}"

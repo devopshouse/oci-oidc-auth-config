@@ -1,0 +1,19 @@
+# Copy this file to terraform.tfvars and fill in the values below.
+# Run: cp terraform.tfvars.example terraform.tfvars
+
+region             = "<YOUR_OCI_REGION>"           # e.g. sa-saopaulo-1
+idcs_endpoint      = "<YOUR_IDCS_ENDPOINT>"        # e.g. https://idcs-xxxxxxxxxxxxxxxx.identity.oraclecloud.com
+tenancy_id         = "<YOUR_TENANCY_OCID>"         # ocid1.tenancy.oc1..aaa...
+compartment_id     = "<YOUR_COMPARTMENT_OCID>"     # ocid1.compartment.oc1..aaa...
+
+github_repositories = [
+  "<YOUR_ORG>/<YOUR_REPO>",                        # e.g. my-org/my-repo
+]
+
+# Optional — override defaults if needed
+# oci_config_profile           = "DEFAULT"
+# github_branch                = "main"
+# app_display_name             = "GitHub-Actions-Confidential-App"
+# service_user_name            = "svc-github-actions-oidc"
+# iam_group_name               = "g-github-actions"
+# confidential_app_template_id = "CustomWebAppTemplateId"
