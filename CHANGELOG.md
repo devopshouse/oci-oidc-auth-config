@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.4](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.1.3...v1.1.4) (2026-04-10)
+
+
+### 🐛 Bug Fixes
+
+* shorten action description to meet Marketplace 125-char limit ([01ae4db](https://github.com/devopshouse/oci-oidc-auth-config/commit/01ae4db2faf3a0312c37574bd6e8ab79c642421a))
+
 ## [1.1.3](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.1.2...v1.1.3) (2026-04-10)
 
 
