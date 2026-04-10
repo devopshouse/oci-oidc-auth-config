@@ -168,7 +168,7 @@ runs:
         path: |
           ~/.local/bin
           ~/.local/lib
-        key: ${{ runner.os }}-oci-cli-pip-v1
+        key: ${{ runner.os }}-${{ runner.environment }}-oidc-auth-cli
 
     - name: Install OCI CLI
       if: steps.cache-oci-cli.outputs.cache-hit != 'true'
@@ -184,7 +184,7 @@ runs:
         path: |
           ~/.local/bin
           ~/.local/lib
-        key: ${{ runner.os }}-oci-cli-pip-v1
+        key: ${{ runner.os }}-${{ runner.environment }}-oidc-auth-cli
 
     - name: Add OCI CLI to PATH
       shell: bash

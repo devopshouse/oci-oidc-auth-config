@@ -32,7 +32,7 @@ Every secret value (`client_id`, `client_secret`, UPST token, tenancy/compartmen
 All `run:` blocks use `set -euo pipefail`. Prefer `jq -r` for JSON extraction. Use `printf '%s\n'` for multi-line file writes.
 
 **OCI CLI caching:**  
-The CLI is installed with `pip3 install --user oci-cli` and cached under `~/.local/bin` and `~/.local/lib` with cache key `${{ runner.os }}-oci-cli-pip-v1`. Bump the `-v1` suffix when a CLI version change is needed.
+The CLI is installed with `pip3 install --user oci-cli` and cached under `~/.local/bin` and `~/.local/lib` with cache key `${{ runner.os }}-${{ runner.environment }}-oidc-auth-cli` (e.g. `Linux-github-hosted-oidc-auth-cli`). The `runner.environment` segment separates GitHub-hosted from self-hosted runner caches.
 
 **Terraform integration:**  
 The Terraform OCI provider must use `auth = "SecurityToken"` and `config_file_profile` pointing to the profile name passed via `oci_profile` (default: `DEFAULT`). See `demo/main.tf`.
