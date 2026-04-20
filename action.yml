@@ -77,12 +77,31 @@ outputs:
 runs:
   using: composite
   steps:
+    # ── parse-oci-config (inlined) ────────────────────────────────────────────
     - name: Parse OCI config from JSON
       id: parse
       if: ${{ inputs.config_json != '' }}
-      uses: ./.github/actions/parse-oci-config
-      with:
-        config_json: ${{ inputs.config_json }}
+      shell: bash
+      env:
+        CONFIG_JSON: ${{ inputs.config_json }}
+      run: |
+        set -euo pipefail
+
+        missing=0
+        for key in oci_idcs_endpoint oci_client_id oci_client_secret oci_region oci_tenancy_id oci_compartment_id; do
+          value="$(jq -r --arg k "$key" '.[$k] // empty' <<< "$CONFIG_JSON")"
+
+          if [ -z "$value" ]; then
+            echo "::error::Missing required key in config_json: ${key}"
+            missing=1
+            continue
+          fi
+
+          echo "::add-mask::$value"
+          echo "${key}=${value}" >> "$GITHUB_OUTPUT"
+        done
+
+        [ "$missing" -eq 0 ] || exit 1
 
     - name: Resolve OCI parameters
       id: resolve
@@ -130,14 +149,172 @@ runs:
         echo "oci_tenancy_id=${oci_tenancy_id}"       >> "$GITHUB_OUTPUT"
         echo "oci_compartment_id=${oci_compartment_id}" >> "$GITHUB_OUTPUT"
 
-    - name: Setup OCI OIDC auth
-      uses: ./.github/actions/setup-oci-oidc-auth
+    # ── setup-oci-oidc-auth (inlined) ─────────────────────────────────────────
+    - name: Request GitHub OIDC token
+      id: github_oidc
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        oidc_response="$(
+          curl -fsS \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${{ inputs.oidc_audience }}"
+        )"
+
+        github_oidc_token="$(jq -r '.value' <<< "$oidc_response")"
+
+        if [ -z "$github_oidc_token" ] || [ "$github_oidc_token" = "null" ]; then
+          echo "::error::GitHub did not return an OIDC token"
+          exit 1
+        fi
+
+        echo "::add-mask::$github_oidc_token"
+        echo "token=$github_oidc_token" >> "$GITHUB_OUTPUT"
+
+        payload="$(jq -R 'split(".") | .[1] | @base64d | fromjson' <<< "$github_oidc_token")"
+        echo "GitHub OIDC issuer: $(jq -r '.iss' <<< "$payload")"
+        echo "GitHub OIDC audience: $(jq -r '.aud' <<< "$payload")"
+        echo "GitHub OIDC subject: $(jq -r '.sub' <<< "$payload")"
+
+    - name: Exchange OIDC token for OCI UPST
+      id: token_exchange
+      shell: bash
+      env:
+        GITHUB_OIDC_TOKEN: ${{ steps.github_oidc.outputs.token }}
+        OCI_IDCS_ENDPOINT: ${{ steps.resolve.outputs.oci_idcs_endpoint }}
+        OCI_CLIENT_ID: ${{ steps.resolve.outputs.oci_client_id }}
+        OCI_CLIENT_SECRET: ${{ steps.resolve.outputs.oci_client_secret }}
+      run: |
+        set -euo pipefail
+
+        echo "::add-mask::${OCI_CLIENT_ID}"
+        echo "::add-mask::${OCI_CLIENT_SECRET}"
+
+        openssl genrsa -out private_key.pem 2048 2>/dev/null
+        openssl rsa -in private_key.pem -pubout -out public_key.pem 2>/dev/null
+
+        token_url="${OCI_IDCS_ENDPOINT%/}/oauth2/v1/token"
+        public_key="$(grep -v -- '-----' public_key.pem | tr -d '\n')"
+
+        max_attempts=4
+        attempt=1
+        http_status=0
+
+        while [ "$attempt" -le "$max_attempts" ]; do
+          http_status="$(
+            curl -sS -o token-response.json -w '%{http_code}' \
+              --request POST "$token_url" \
+              --header 'Content-Type: application/x-www-form-urlencoded' \
+              --header "Authorization: Basic $(printf '%s:%s' "${OCI_CLIENT_ID}" "${OCI_CLIENT_SECRET}" | base64 -w0)" \
+              --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:token-exchange' \
+              --data-urlencode 'requested_token_type=urn:oci:token-type:oci-upst' \
+              --data-urlencode "public_key=${public_key}" \
+              --data-urlencode "subject_token=${GITHUB_OIDC_TOKEN}" \
+              --data-urlencode 'subject_token_type=jwt'
+          )"
+
+          if [ "$http_status" -ge 200 ] && [ "$http_status" -le 299 ]; then
+            break
+          fi
+
+          if [ "$attempt" -lt "$max_attempts" ]; then
+            delay=$((attempt * 2))
+            echo "::warning::OCI token exchange failed with HTTP ${http_status} (attempt ${attempt}/${max_attempts}). Retrying in ${delay}s..."
+            sleep "$delay"
+          fi
+
+          attempt=$((attempt + 1))
+        done
+
+        if [ "$http_status" -lt 200 ] || [ "$http_status" -gt 299 ]; then
+          echo "::error::OCI token exchange failed with HTTP ${http_status} after ${max_attempts} attempts"
+          jq -C . token-response.json || cat token-response.json
+          exit 1
+        fi
+
+        upst="$(jq -r '.token // .access_token // empty' token-response.json)"
+
+        if [ -z "$upst" ]; then
+          echo "::error::OCI response did not include a UPST token"
+          jq -C . token-response.json || cat token-response.json
+          exit 1
+        fi
+
+        echo "::add-mask::$upst"
+        mkdir -p "$HOME/.oci"
+        chmod 700 "$HOME/.oci"
+
+        printf '%s' "$upst" > "$HOME/.oci/oci-upst"
+        chmod 600 "$HOME/.oci/oci-upst"
+
+        mv private_key.pem "$HOME/.oci/upst_private_key.pem"
+        chmod 600 "$HOME/.oci/upst_private_key.pem"
+
+        echo "OCI UPST token exchange succeeded."
+
+    - name: Write ~/.oci/config and ~/.oci/oci_cli_rc
+      shell: bash
+      env:
+        OCI_TENANCY_ID: ${{ steps.resolve.outputs.oci_tenancy_id }}
+        OCI_REGION: ${{ steps.resolve.outputs.oci_region }}
+        OCI_COMPARTMENT_ID: ${{ steps.resolve.outputs.oci_compartment_id }}
+        PROFILE: ${{ inputs.oci_profile }}
+      run: |
+        set -euo pipefail
+
+        echo "::add-mask::${OCI_TENANCY_ID}"
+        echo "::add-mask::${OCI_COMPARTMENT_ID}"
+
+        fingerprint=$(openssl rsa -pubout -outform DER \
+          -in "$HOME/.oci/upst_private_key.pem" 2>/dev/null \
+          | openssl dgst -md5 -c \
+          | awk '{print $NF}')
+
+        printf '%s\n' \
+          "[${PROFILE}]" \
+          "tenancy=${OCI_TENANCY_ID}" \
+          "region=${OCI_REGION}" \
+          "key_file=${HOME}/.oci/upst_private_key.pem" \
+          "security_token_file=${HOME}/.oci/oci-upst" \
+          "fingerprint=${fingerprint}" \
+          > "$HOME/.oci/config"
+        chmod 600 "$HOME/.oci/config"
+
+        printf '%s\n' \
+          "[${PROFILE}]" \
+          "compartment-id=${OCI_COMPARTMENT_ID}" \
+          > "$HOME/.oci/oci_cli_rc"
+        chmod 600 "$HOME/.oci/oci_cli_rc"
+
+        echo "OCI_CLI_AUTH=security_token" >> "$GITHUB_ENV"
+        echo "~/.oci/config and ~/.oci/oci_cli_rc written (profile: ${PROFILE}, region: ${OCI_REGION})."
+
+    - name: Restore OCI CLI cache
+      id: cache-oci-cli
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
-        oci_idcs_endpoint: ${{ steps.resolve.outputs.oci_idcs_endpoint }}
-        oci_client_id: ${{ steps.resolve.outputs.oci_client_id }}
-        oci_client_secret: ${{ steps.resolve.outputs.oci_client_secret }}
-        oci_tenancy_id: ${{ steps.resolve.outputs.oci_tenancy_id }}
-        oci_region: ${{ steps.resolve.outputs.oci_region }}
-        oci_compartment_id: ${{ steps.resolve.outputs.oci_compartment_id }}
-        oidc_audience: ${{ inputs.oidc_audience }}
-        oci_profile: ${{ inputs.oci_profile }}
+        path: |
+          ~/.local/bin
+          ~/.local/lib
+        key: ${{ runner.os }}-${{ runner.environment }}-oidc-auth-cli
+
+    - name: Install OCI CLI
+      if: steps.cache-oci-cli.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        pip3 install --user oci-cli
+
+    - name: Save OCI CLI cache
+      if: steps.cache-oci-cli.outputs.cache-hit != 'true'
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      with:
+        path: |
+          ~/.local/bin
+          ~/.local/lib
+        key: ${{ runner.os }}-${{ runner.environment }}-oidc-auth-cli
+
+    - name: Add OCI CLI to PATH
+      shell: bash
+      run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
