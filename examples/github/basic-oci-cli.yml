@@ -18,9 +18,9 @@ jobs:
     steps:
       - name: Setup OCI OIDC Auth
         id: oci
-        uses: devopshouse/oci-oidc-auth-config@v1
+        uses: devopshouse/oci-oidc-auth-config@v2
         with:
-          config_json: ${{ secrets.OCI_CONFIG_JSON }}
+          config_json: ${{ secrets.OCI_OIDC_CONFIG }}
 
       # After this step the OCI CLI is installed, configured, and authenticated.
       # OCI_CLI_AUTH=security_token is set in the environment automatically.
