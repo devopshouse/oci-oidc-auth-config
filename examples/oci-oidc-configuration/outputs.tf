@@ -1,39 +1,30 @@
-# The oci_integration_config_json output is ready to paste as a GitHub Actions secret.
-output "oci_integration_config_json" {
-  description = "Ready-to-use JSON value for the OCI_CONFIG_JSON GitHub Actions secret."
+# Ready-to-use unified secret for both OCI and OCIR access.
+# GitHub: the module writes this automatically as OCI_OIDC_CONFIG in each repo
+#   when github.create_secrets = true (the default).
+# GitLab: base64-encode it and store as OCI_OIDC_CONFIG_B64:
+#   terraform output -raw ci_oidc_config_json | base64 -w0
+output "ci_oidc_config_json" {
+  description = "Ready-to-use JSON value for the OCI_OIDC_CONFIG CI secret (OCI + OCIR unified)."
   sensitive   = true
-  value = jsonencode({
-    oci_idcs_endpoint  = var.idcs_endpoint
-    oci_client_id      = oci_identity_domains_app.github_actions_app.name
-    oci_client_secret  = oci_identity_domains_app.github_actions_app.client_secret
-    oci_region         = var.region
-    oci_tenancy_id     = oci_identity_domains_app.github_actions_app.tenancy_ocid
-    oci_compartment_id = var.compartment_id
-  })
+  value       = module.oci_oidc_federation.ci_oidc_config_json
 }
 
-output "oci_client_id" {
-  description = "OAuth client ID of the confidential app — maps to oci_client_id in the config JSON."
-  value       = oci_identity_domains_app.github_actions_app.name
-}
-
-output "oci_client_secret" {
-  description = "OAuth client secret — maps to oci_client_secret in the config JSON."
-  value       = oci_identity_domains_app.github_actions_app.client_secret
-  sensitive   = true
-}
-
-output "oci_tenancy_id" {
-  description = "Tenancy OCID — maps to oci_tenancy_id in the config JSON."
-  value       = oci_identity_domains_app.github_actions_app.tenancy_ocid
-}
-
-output "service_user_ocid" {
-  description = "OCID of the service user configured for impersonation."
-  value       = oci_identity_domains_user.github_service_user.ocid
+output "iam_group_ocid" {
+  description = "OCID of the Identity Domains group shared by all CI platforms."
+  value       = module.oci_oidc_federation.iam_group_ocid
 }
 
 output "github_subject_claims" {
-  description = "OIDC sub claims registered in the Identity Propagation Trust."
-  value       = local.github_sub_claims
+  description = "Subject claims registered in the GitHub Actions trust."
+  value       = module.oci_oidc_federation.github_subject_claims
+}
+
+output "gitlab_subject_claims" {
+  description = "Subject claims registered in the GitLab CI trust (empty when gitlab ∉ ci_platforms)."
+  value       = module.oci_oidc_federation.gitlab_subject_claims
+}
+
+output "gitlab_oidc_audience" {
+  description = "Audience for .gitlab-ci.yml id_tokens.OCI_OIDC_TOKEN.aud (null when gitlab ∉ ci_platforms)."
+  value       = module.oci_oidc_federation.gitlab_oidc_audience
 }

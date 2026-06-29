@@ -1,61 +1,79 @@
-variable "region" {
+variable "oci_region" {
   type        = string
   description = "OCI region identifier (e.g. sa-saopaulo-1)."
 }
 
-variable "oci_config_profile" {
+variable "oci_tenancy_id" {
+  type        = string
+  description = "OCID of the OCI tenancy."
+}
+
+variable "oci_compartment_id" {
+  type        = string
+  description = "OCID of the compartment where CI resources will be created."
+}
+
+variable "oci_profile" {
   type        = string
   description = "OCI CLI config file profile used to provision resources."
   default     = "DEFAULT"
 }
 
-variable "idcs_endpoint" {
+variable "oci_identity_domain_name" {
   type        = string
-  description = "Identity Domain URL (e.g. https://idcs-<hash>.identity.oraclecloud.com)."
+  description = "Display name of the Identity Domain (e.g., Default)."
+  default     = "Default"
 }
 
-variable "tenancy_id" {
+variable "oci_service_user_name" {
   type        = string
-  description = "OCID of the OCI tenancy."
+  description = "Username for the OCI Identity Domain service user created for CI OIDC impersonation."
+  default     = "svc-ci-oidc"
 }
 
-variable "compartment_id" {
+variable "git_actions_group_name" {
   type        = string
-  description = "OCID of the compartment where IAM policies will be created."
+  description = "IAM group name shared by all CI platforms federated via OIDC."
+  default     = "g-ci-oidc"
 }
 
-variable "github_repositories" {
+variable "ci_platforms" {
   type        = list(string)
-  description = "GitHub repositories allowed to federate, in 'org/repo' format."
-  # example: ["my-org/my-repo", "my-org/another-repo"]
+  description = "CI platforms federated via OIDC. Allowed values: github, gitlab."
+  default     = ["github"]
 }
 
-variable "github_branch" {
-  type        = string
-  description = "Git branch allowed in the GitHub OIDC sub claim."
-  default     = "main"
+variable "github" {
+  type = object({
+    branch         = optional(string, "main")
+    repositories   = optional(list(string), []) # format: org/repo
+    create_secrets = optional(bool, true)
+  })
+  description = "GitHub Actions OIDC configuration."
+  default     = {}
 }
 
-variable "app_display_name" {
-  type        = string
-  description = "Display name for the IDCS confidential application."
-  default     = "GitHub-Actions-Confidential-App"
+variable "gitlab" {
+  type = object({
+    issuer              = optional(string, "")
+    audience            = optional(string, "https://cloud.oracle.com")
+    ref                 = optional(string, "main")
+    ref_type            = optional(string, "branch")
+    projects            = optional(list(string), []) # format: group/project
+    public_key_endpoint = optional(string, null)
+  })
+  description = "GitLab CI OIDC configuration. Required when \"gitlab\" ∈ ci_platforms."
+  default     = {}
 }
 
-variable "service_user_name" {
-  type        = string
-  description = "Username for the OCI Identity Domain service user created for GitHub Actions impersonation."
-  default     = "svc-github-actions-oidc"
+variable "ocir_allowed_repositories" {
+  type        = list(string)
+  description = "OCIR repository names the OCIR user may push/pull. Empty allows broad access in the compartment."
+  default     = []
 }
 
-variable "iam_group_name" {
+variable "github_owner" {
   type        = string
-  description = "Name of the OCI Identity Domain group for GitHub Actions."
-  default     = "g-github-actions"
-}
-
-variable "confidential_app_template_id" {
-  type        = string
-  description = "Identity Domains template identifier for a Confidential Application."
-  default     = "CustomWebAppTemplateId"
+  description = "GitHub organisation or user that owns the repositories. Used to configure the GitHub provider."
+  default     = ""
 }
