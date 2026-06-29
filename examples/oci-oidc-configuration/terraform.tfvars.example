@@ -17,3 +17,13 @@ github_repositories = [
 # service_user_name            = "svc-github-actions-oidc"
 # iam_group_name               = "g-github-actions"
 # confidential_app_template_id = "CustomWebAppTemplateId"
+
+# GitLab CI OIDC federation (uncomment to enable)
+# enable_gitlab  = true
+# gitlab_projects = [
+#   "<YOUR_GROUP>/<YOUR_PROJECT>",                 # e.g. my-group/my-project
+# ]
+# gitlab_ref      = "main"
+# gitlab_ref_type = "branch"
+# gitlab_issuer   = "https://gitlab.com"           # override for self-managed GitLab
+# gitlab_audience = "https://cloud.oracle.com/gitlab"

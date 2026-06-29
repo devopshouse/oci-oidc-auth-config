@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.0.0](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.0.4...v2.0.0) (2026-06-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* Action reference updated from `@v1` to `@v2`. `@v1` continues to work; migrate to pick up GitLab CI support and the refactored architecture.
+
+
+### ✨ Features
+
+* **gitlab:** add GitLab CI OIDC support via `CI_PLATFORM=gitlab` and `CI_JOB_JWT_FILE`
+* **scripts:** refactor inline action bash into reusable scripts in `scripts/` (resolve-oci-config, get-oidc-token, exchange-token, write-oci-config)
+* **terraform:** extend `examples/oci-oidc-configuration` with optional GitLab Identity Propagation Trust (`enable_gitlab`, `gitlab_projects`, `gitlab_ref`, `gitlab_ref_type`, `gitlab_issuer`, `gitlab_audience`)
+* **examples:** add `examples/gitlab/.gitlab-ci.yml` showing keyless OCI auth from GitLab CI
+
+
+### 📚 Documentation
+
+* update README to document `@v2`, GitLab CI usage, and multi-CI architecture
+
+
 ## [1.0.4](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.0.3...v1.0.4) (2026-04-20)
 
 

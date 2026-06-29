@@ -23,6 +23,12 @@ locals {
     [for repo in var.github_repositories : "repo:${repo}:ref:refs/heads/${var.github_branch}"],
     [for repo in var.github_repositories : "repo:${repo}:pull_request"]
   )
+
+  # Build OIDC sub claims for every GitLab project.
+  gitlab_sub_claims = [
+    for project in var.gitlab_projects :
+    "project_path:${project}:ref_type:${var.gitlab_ref_type}:ref:${var.gitlab_ref}"
+  ]
 }
 
 # ---------------------------------------------------------------------------
@@ -125,6 +131,45 @@ resource "oci_identity_domains_identity_propagation_trust" "github_actions_trust
   lifecycle {
     # The OCI provider does not return impersonationServiceUsers on refresh, causing
     # false drift on every plan. Running apply is safe — it re-sets idempotently.
+    ignore_changes = [tags]
+  }
+}
+
+# ---------------------------------------------------------------------------
+# IDCS — Identity Propagation Trust (GitLab CI OIDC → OCI UPST)
+# ---------------------------------------------------------------------------
+resource "oci_identity_domains_identity_propagation_trust" "gitlab_ci_trust" {
+  count = var.enable_gitlab ? 1 : 0
+
+  idcs_endpoint = var.idcs_endpoint
+  issuer        = var.gitlab_issuer
+  name          = "GitLab-CI-Trust"
+  description   = "Identity propagation trust for GitLab CI OIDC."
+  type          = "JWT"
+  schemas       = ["urn:ietf:params:scim:schemas:oracle:idcs:IdentityPropagationTrust"]
+
+  active              = true
+  allow_impersonation = true
+  public_key_endpoint = "${var.gitlab_issuer}/oauth/discovery/keys"
+
+  client_claim_name   = "sub"
+  client_claim_values = local.gitlab_sub_claims
+  subject_claim_name  = "sub"
+  subject_type        = "User"
+
+  impersonation_service_users {
+    rule  = "sub eq *"
+    value = oci_identity_domains_user.github_service_user.id
+  }
+
+  oauth_clients = [oci_identity_domains_app.github_actions_app.name]
+
+  tags {
+    key   = "managed-by"
+    value = "terraform"
+  }
+
+  lifecycle {
     ignore_changes = [tags]
   }
 }

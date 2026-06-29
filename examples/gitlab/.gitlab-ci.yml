@@ -1,0 +1,22 @@
+# Prerequisites: run examples/oci-oidc-configuration/ with enable_gitlab=true.
+# CI/CD variables (Settings > CI/CD > Variables, mark secrets as Masked):
+#   OCI_IDCS_ENDPOINT, OCI_CLIENT_ID, OCI_CLIENT_SECRET,
+#   OCI_REGION, OCI_TENANCY_ID, OCI_COMPARTMENT_ID
+
+stages:
+  - deploy
+
+oci-auth-test:
+  stage: deploy
+  image: ubuntu:22.04
+
+  variables:
+    OCI_CLI_AUTH: security_token
+
+  id_tokens:
+    OCI_OIDC_TOKEN:
+      aud: https://cloud.oracle.com/gitlab
+
+  script:
+    - curl -sSfL https://raw.githubusercontent.com/devopshouse/oci-oidc-auth-config/v2/scripts/setup-gitlab.sh | bash
+    - oci os ns get

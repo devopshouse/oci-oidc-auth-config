@@ -26,11 +26,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup OCI OIDC Auth
         id: oci
-        uses: devopshouse/oci-oidc-auth-config@v1
+        uses: devopshouse/oci-oidc-auth-config@v2
         with:
           config_json: ${{ secrets.OCI_CONFIG_JSON }}
 

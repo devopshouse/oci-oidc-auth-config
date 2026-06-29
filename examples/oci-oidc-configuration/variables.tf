@@ -59,3 +59,43 @@ variable "confidential_app_template_id" {
   description = "Identity Domains template identifier for a Confidential Application."
   default     = "CustomWebAppTemplateId"
 }
+
+# ---------------------------------------------------------------------------
+# GitLab CI OIDC federation (optional)
+# ---------------------------------------------------------------------------
+
+variable "enable_gitlab" {
+  type        = bool
+  description = "Whether to create the GitLab CI Identity Propagation Trust."
+  default     = false
+}
+
+variable "gitlab_projects" {
+  type        = list(string)
+  description = "GitLab projects allowed to federate, in 'group/project' format."
+  default     = []
+}
+
+variable "gitlab_ref" {
+  type        = string
+  description = "Git ref (branch or tag name) allowed in the GitLab OIDC sub claim."
+  default     = "main"
+}
+
+variable "gitlab_ref_type" {
+  type        = string
+  description = "Ref type used in the sub claim: 'branch' or 'tag'."
+  default     = "branch"
+}
+
+variable "gitlab_issuer" {
+  type        = string
+  description = "GitLab OIDC issuer URL. Override for self-managed instances."
+  default     = "https://gitlab.com"
+}
+
+variable "gitlab_audience" {
+  type        = string
+  description = "Audience claim expected in GitLab OIDC tokens."
+  default     = "https://cloud.oracle.com/gitlab"
+}

@@ -34,6 +34,11 @@ output "service_user_ocid" {
 }
 
 output "github_subject_claims" {
-  description = "OIDC sub claims registered in the Identity Propagation Trust."
+  description = "OIDC sub claims registered in the GitHub Identity Propagation Trust."
   value       = local.github_sub_claims
+}
+
+output "gitlab_subject_claims" {
+  description = "OIDC sub claims registered in the GitLab Identity Propagation Trust (empty when enable_gitlab=false)."
+  value       = local.gitlab_sub_claims
 }
