@@ -1,0 +1,111 @@
+# Example: Build and push a container image to OCIR using GitHub OIDC authentication.
+# Shows Docker, Podman, and Kaniko — uncomment the job that matches your needs.
+# Note: Kubernetes-based runners without privileged container builds may not
+# support Podman build reliably. Prefer Kaniko there.
+# Copy this file to .github/workflows/ in your repository.
+#
+# Prerequisites:
+#   - OCI_OIDC_CONFIG secret: unified JSON emitted by terraform-oci-oidc-federation
+#     (terraform output -raw ci_oidc_config_json)
+#     Contains both OCI connection fields and OCIR credentials in a single blob.
+#
+# The action exports OCIR_USERNAME, OCIR_PASSWORD, OCIR_URL, OCIR_REGISTRY to
+# GITHUB_ENV and writes ~/.docker/config.json automatically (ocir_login: true by
+# default) — no separate docker login or kaniko config step needed.
+#
+# Docker and Podman are pre-installed on ubuntu-latest runners.
+# Kaniko runs via `docker run` so no separate install is needed.
+
+name: OCIR — Build and Push
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # Required to request a GitHub OIDC token
+
+env:
+  IMAGE_NAME: myapp   # Change to your image name
+
+jobs:
+
+  # ── Option A: Docker ──────────────────────────────────────────────────────────
+  build-push-docker:
+    name: Docker build & push
+    runs-on: ubuntu-latest   # Docker is pre-installed
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup OCI OIDC Auth
+        uses: devopshouse/oci-oidc-auth-config@v2
+        with:
+          config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+          # ocir_login: true (default) — writes ~/.docker/config.json automatically.
+
+      # OCIR_USERNAME / OCIR_PASSWORD / OCIR_URL / OCIR_REGISTRY are now in GITHUB_ENV.
+      # ~/.docker/config.json is already written — no docker login step needed.
+
+      - name: Build and push
+        run: |
+          docker build -t "$OCIR_URL/$IMAGE_NAME:$GITHUB_SHA" .
+          docker push "$OCIR_URL/$IMAGE_NAME:$GITHUB_SHA"
+          docker tag  "$OCIR_URL/$IMAGE_NAME:$GITHUB_SHA" "$OCIR_URL/$IMAGE_NAME:latest"
+          docker push "$OCIR_URL/$IMAGE_NAME:latest"
+
+  # ── Option B: Podman ──────────────────────────────────────────────────────────
+  build-push-podman:
+    name: Podman build & push
+    runs-on: ubuntu-latest   # Podman is pre-installed
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup OCI OIDC Auth
+        uses: devopshouse/oci-oidc-auth-config@v2
+        with:
+          config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+          # ocir_login: true (default) — writes ~/.docker/config.json (REGISTRY_AUTH_FILE
+          # env var is also set, which podman honours as a fallback).
+
+      # No podman login step needed.
+
+      - name: Build and push
+        run: |
+          podman build -t "$OCIR_URL/$IMAGE_NAME:$GITHUB_SHA" .
+          podman push "$OCIR_URL/$IMAGE_NAME:$GITHUB_SHA"
+          podman tag  "$OCIR_URL/$IMAGE_NAME:$GITHUB_SHA" "$OCIR_URL/$IMAGE_NAME:latest"
+          podman push "$OCIR_URL/$IMAGE_NAME:latest"
+
+  # ── Option C: Kaniko (rootless, no Docker daemon in the build step) ───────────
+  # Kaniko runs via `docker run` so no additional install is needed.
+  # The action writes ~/.docker/config.json which is bind-mounted into Kaniko below.
+  build-push-kaniko:
+    name: Kaniko build & push
+    runs-on: ubuntu-latest   # Docker (to run the Kaniko image) is pre-installed
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup OCI OIDC Auth
+        uses: devopshouse/oci-oidc-auth-config@v2
+        with:
+          config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+          # ocir_login: true (default) — writes ~/.docker/config.json for Kaniko to use.
+
+      - name: Build and push with Kaniko
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$HOME/.docker:/kaniko/.docker:ro" \
+            gcr.io/kaniko-project/executor:latest \
+              --context /workspace \
+              --dockerfile /workspace/Dockerfile \
+              --destination "$OCIR_URL/$IMAGE_NAME:$GITHUB_SHA" \
+              --destination "$OCIR_URL/$IMAGE_NAME:latest"

@@ -1,0 +1,18 @@
+{
+  "name": "oci-oidc-auth-config",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Keyless OCI auth via OIDC for GitHub Actions and GitLab CI.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && ncc build src/github-action.ts -o dist --source-map --license licenses.txt && ncc build src/cli.ts -o dist-cli --source-map --license licenses-cli.txt && node scripts/copy-cli-dist.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@vercel/ncc": "^0.38.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
