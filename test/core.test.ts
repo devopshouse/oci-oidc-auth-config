@@ -1,15 +1,25 @@
-import { mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// Mock node:child_process at the module level so ocirBearerLogin tests can
+// control execFileSync without spawning real processes.
+vi.mock('node:child_process', () => ({
+  execFileSync: vi.fn(),
+  spawnSync: vi.fn(() => ({ status: 0 }))
+}));
+
+import { execFileSync } from 'node:child_process';
 import {
+  REGION_KEY_MAP,
   appendExports,
-  deriveOcirRegistry,
   exchangeOidcForUpst,
   generateRsaKeyPair,
+  ocirBearerLogin,
   parseJwtPayload,
+  regionToRegistry,
   resolveOciConfig,
-  resolveOcirConfig,
   resolveUnifiedConfig,
   writeContainerAuth,
   writeOciFiles
@@ -31,6 +41,10 @@ const logger = {
   mask: vi.fn()
 };
 
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
 describe('resolveOciConfig', () => {
   it('parses config_json', () => {
     expect(resolveOciConfig({ configJson: JSON.stringify(fullConfig), env: {} })).toEqual(fullConfig);
@@ -47,7 +61,6 @@ describe('resolveOciConfig', () => {
       configJsonBase64,
       values: { oci_region: 'us-ashburn-1' }
     });
-
     expect(resolved.oci_region).toBe('sa-saopaulo-1');
   });
 
@@ -56,7 +69,6 @@ describe('resolveOciConfig', () => {
       configJson: JSON.stringify(fullConfig),
       values: { oci_region: 'us-ashburn-1' }
     });
-
     expect(resolved.oci_region).toBe('sa-saopaulo-1');
   });
 
@@ -71,7 +83,6 @@ describe('resolveOciConfig', () => {
         OCI_COMPARTMENT_ID: fullConfig.oci_compartment_id
       }
     });
-
     expect(resolved).toEqual(fullConfig);
   });
 
@@ -88,157 +99,17 @@ describe('resolveOciConfig', () => {
   });
 });
 
-const fullOcirConfig = {
-  OCIR_USERNAME: 'myns/ocir-user',
-  OCIR_PASSWORD: 'auth-token-value',
-  OCIR_URL: 'ocir.sa-saopaulo-1.oci.oraclecloud.com/myns',
-  OCIR_REGISTRY: 'ocir.sa-saopaulo-1.oci.oraclecloud.com'
-};
-
-describe('resolveOcirConfig', () => {
-  it('returns undefined when no OCIR vars are present', () => {
-    expect(resolveOcirConfig({ env: {} })).toBeUndefined();
-  });
-
-  it('parses OCIR_CONFIG_JSON_B64', () => {
-    const configJsonBase64 = Buffer.from(JSON.stringify(fullOcirConfig)).toString('base64');
-    expect(resolveOcirConfig({ configJsonBase64, env: {} })).toEqual(fullOcirConfig);
-  });
-
-  it('parses plain OCIR_CONFIG_JSON', () => {
-    expect(resolveOcirConfig({ configJson: JSON.stringify(fullOcirConfig), env: {} })).toEqual(fullOcirConfig);
-  });
-
-  it('reads individual OCIR_* environment variables', () => {
-    expect(
-      resolveOcirConfig({
-        env: {
-          OCIR_USERNAME: fullOcirConfig.OCIR_USERNAME,
-          OCIR_PASSWORD: fullOcirConfig.OCIR_PASSWORD,
-          OCIR_URL: fullOcirConfig.OCIR_URL,
-          OCIR_REGISTRY: fullOcirConfig.OCIR_REGISTRY
-        }
-      })
-    ).toEqual(fullOcirConfig);
-  });
-
-  it('gives OCIR_CONFIG_JSON_B64 precedence over individual values', () => {
-    const configJsonBase64 = Buffer.from(JSON.stringify(fullOcirConfig)).toString('base64');
-    const result = resolveOcirConfig({
-      configJsonBase64,
-      values: { OCIR_REGISTRY: 'ocir.us-ashburn-1.oci.oraclecloud.com' }
-    });
-    expect(result?.OCIR_REGISTRY).toBe(fullOcirConfig.OCIR_REGISTRY);
-  });
-
-  it('gives OCIR_CONFIG_JSON precedence over individual values', () => {
-    const result = resolveOcirConfig({
-      configJson: JSON.stringify(fullOcirConfig),
-      values: { OCIR_REGISTRY: 'ocir.us-ashburn-1.oci.oraclecloud.com' }
-    });
-    expect(result?.OCIR_REGISTRY).toBe(fullOcirConfig.OCIR_REGISTRY);
-  });
-
-  it('throws on partial individual OCIR_* variables', () => {
-    expect(() =>
-      resolveOcirConfig({ env: { OCIR_USERNAME: 'myns/ocir-user', OCIR_PASSWORD: 'token' } })
-    ).toThrow(/Partial OCIR configuration/);
-  });
-
-  it('throws on invalid OCI_OIDC_CONFIG_B64 (OCIR path)', () => {
-    expect(() => resolveOcirConfig({ configJsonBase64: 'bm90LWpzb24=', env: {} })).toThrow(
-      /OCI_OIDC_CONFIG_B64 decoded value/
-    );
-  });
-
-  it('throws on missing keys in OCI_OIDC_CONFIG (OCIR path)', () => {
-    expect(() =>
-      resolveOcirConfig({ configJson: JSON.stringify({ OCIR_USERNAME: 'x' }), env: {} })
-    ).toThrow(/OCI_OIDC_CONFIG/);
-  });
-
-  // Terraform module (devopshouse/terraform-oci-oidc-federation) emits lowercase keys
-  // and no ocir_registry — the action must accept this and derive the registry from the URL.
-
-  it('accepts lowercase keys from Terraform module JSON output', () => {
-    const moduleJson = JSON.stringify({
-      ocir_username: fullOcirConfig.OCIR_USERNAME,
-      ocir_password: fullOcirConfig.OCIR_PASSWORD,
-      ocir_url: fullOcirConfig.OCIR_URL
-    });
-    const result = resolveOcirConfig({ configJson: moduleJson, env: {} });
-    expect(result?.OCIR_USERNAME).toBe(fullOcirConfig.OCIR_USERNAME);
-    expect(result?.OCIR_PASSWORD).toBe(fullOcirConfig.OCIR_PASSWORD);
-    expect(result?.OCIR_URL).toBe(fullOcirConfig.OCIR_URL);
-    expect(result?.OCIR_REGISTRY).toBe(fullOcirConfig.OCIR_REGISTRY); // derived from URL
-  });
-
-  it('derives OCIR_REGISTRY from URL when key is absent in JSON', () => {
-    const result = resolveOcirConfig({
-      configJson: JSON.stringify({
-        ocir_username: 'myns/user',
-        ocir_password: 'tok',
-        ocir_url: 'ocir.us-ashburn-1.oci.oraclecloud.com/myns'
-      }),
-      env: {}
-    });
-    expect(result?.OCIR_REGISTRY).toBe('ocir.us-ashburn-1.oci.oraclecloud.com');
-  });
-
-  it('accepts lowercase individual environment variables', () => {
-    const result = resolveOcirConfig({
-      env: {
-        ocir_username: fullOcirConfig.OCIR_USERNAME,
-        ocir_password: fullOcirConfig.OCIR_PASSWORD,
-        ocir_url: fullOcirConfig.OCIR_URL
-      }
-    });
-    expect(result?.OCIR_USERNAME).toBe(fullOcirConfig.OCIR_USERNAME);
-    expect(result?.OCIR_REGISTRY).toBe(fullOcirConfig.OCIR_REGISTRY); // derived
-  });
-
-  it('explicit ocir_registry in JSON takes precedence over derived value', () => {
-    const result = resolveOcirConfig({
-      configJson: JSON.stringify({
-        ocir_username: 'myns/user',
-        ocir_password: 'tok',
-        ocir_url: 'ocir.us-ashburn-1.oci.oraclecloud.com/myns',
-        ocir_registry: 'custom.registry.example.com'
-      }),
-      env: {}
-    });
-    expect(result?.OCIR_REGISTRY).toBe('custom.registry.example.com');
-  });
-});
-
-const unifiedBlob = {
-  ...fullConfig,
-  ocir_username: 'myns/svc-ci-oidc-ocir',
-  ocir_password: 'auth-token-value',
-  ocir_url: 'ocir.sa-saopaulo-1.oci.oraclecloud.com/myns'
-};
-
 describe('resolveUnifiedConfig', () => {
-  it('parses a unified blob and returns both oci and ocir', () => {
-    const { oci, ocir } = resolveUnifiedConfig({ configJson: JSON.stringify(unifiedBlob), env: {} });
+  it('parses a unified blob (ocir_* keys ignored)', () => {
+    const blob = { ...fullConfig, ocir_username: 'ignored', ocir_password: 'ignored', ocir_url: 'ignored' };
+    const { oci } = resolveUnifiedConfig({ configJson: JSON.stringify(blob), env: {} });
     expect(oci).toEqual(fullConfig);
-    expect(ocir?.OCIR_USERNAME).toBe(unifiedBlob.ocir_username);
-    expect(ocir?.OCIR_PASSWORD).toBe(unifiedBlob.ocir_password);
-    expect(ocir?.OCIR_URL).toBe(unifiedBlob.ocir_url);
-    expect(ocir?.OCIR_REGISTRY).toBe('ocir.sa-saopaulo-1.oci.oraclecloud.com'); // derived
   });
 
   it('parses a base64-encoded unified blob (OCI_OIDC_CONFIG_B64)', () => {
-    const configJsonBase64 = Buffer.from(JSON.stringify(unifiedBlob)).toString('base64');
-    const { oci, ocir } = resolveUnifiedConfig({ configJsonBase64, env: {} });
+    const configJsonBase64 = Buffer.from(JSON.stringify(fullConfig)).toString('base64');
+    const { oci } = resolveUnifiedConfig({ configJsonBase64, env: {} });
     expect(oci).toEqual(fullConfig);
-    expect(ocir?.OCIR_USERNAME).toBe(unifiedBlob.ocir_username);
-  });
-
-  it('returns ocir=undefined when OCIR keys are absent from the blob', () => {
-    const { oci, ocir } = resolveUnifiedConfig({ configJson: JSON.stringify(fullConfig), env: {} });
-    expect(oci).toEqual(fullConfig);
-    expect(ocir).toBeUndefined();
   });
 
   it('falls back to individual env vars when no JSON blob is provided', () => {
@@ -250,29 +121,108 @@ describe('resolveUnifiedConfig', () => {
       OCI_TENANCY_ID: fullConfig.oci_tenancy_id,
       OCI_COMPARTMENT_ID: fullConfig.oci_compartment_id
     };
-    const { oci, ocir } = resolveUnifiedConfig({ env });
+    const { oci } = resolveUnifiedConfig({ env });
     expect(oci).toEqual(fullConfig);
-    expect(ocir).toBeUndefined();
   });
 
-  it('throws on partial OCIR keys in blob', () => {
-    const partialOcir = { ...fullConfig, ocir_username: 'myns/user' }; // missing password + url
-    expect(() => resolveUnifiedConfig({ configJson: JSON.stringify(partialOcir), env: {} })).toThrow(
-      /Missing required key\(s\)/
-    );
+  it('throws when OCI keys are missing (ocir-only blob)', () => {
+    expect(() =>
+      resolveUnifiedConfig({
+        configJson: JSON.stringify({ ocir_username: 'x', ocir_password: 'y', ocir_url: 'z' }),
+        env: {}
+      })
+    ).toThrow(/Missing required/);
   });
 });
 
-describe('deriveOcirRegistry', () => {
-  it('strips the namespace path from an OCIR URL', () => {
-    expect(deriveOcirRegistry('ocir.sa-saopaulo-1.oci.oraclecloud.com/myns')).toBe(
-      'ocir.sa-saopaulo-1.oci.oraclecloud.com'
+describe('regionToRegistry', () => {
+  it('maps known regions to <key>.ocir.io', () => {
+    expect(regionToRegistry('sa-saopaulo-1')).toBe('gru.ocir.io');
+    expect(regionToRegistry('us-ashburn-1')).toBe('iad.ocir.io');
+    expect(regionToRegistry('eu-frankfurt-1')).toBe('fra.ocir.io');
+    expect(regionToRegistry('ap-tokyo-1')).toBe('nrt.ocir.io');
+    expect(regionToRegistry('uk-london-1')).toBe('lhr.ocir.io');
+  });
+
+  it('throws a descriptive error for unknown regions', () => {
+    expect(() => regionToRegistry('xx-nowhere-1')).toThrow(/Unknown OCI region "xx-nowhere-1"/);
+    expect(() => regionToRegistry('xx-nowhere-1')).toThrow(/Known regions:/);
+  });
+
+  it('covers all entries in REGION_KEY_MAP', () => {
+    for (const region of Object.keys(REGION_KEY_MAP)) {
+      expect(() => regionToRegistry(region)).not.toThrow();
+      expect(regionToRegistry(region)).toMatch(/^[a-z]+\.ocir\.io$/);
+    }
+  });
+});
+
+describe('ocirBearerLogin', () => {
+  const tmpDir = () => mkdtempSync(join(tmpdir(), 'oci-ocir-bearer-'));
+  const execMock = vi.mocked(execFileSync);
+
+  it('throws when region is unknown (no CLI call)', () => {
+    expect(() => ocirBearerLogin({ region: 'xx-unknown-1', logger, dockerConfigDir: tmpDir() })).toThrow(
+      /Unknown OCI region/
+    );
+    expect(execMock).not.toHaveBeenCalled();
+  });
+
+  it('writes BEARER_TOKEN auth to docker config', () => {
+    const namespace = 'mytenancy';
+    const jwt = 'eyJhbGciOiJSUzI1NiJ9.test.sig';
+
+    // First call: oci os ns get
+    execMock.mockReturnValueOnce(Buffer.from(`${namespace}\n`) as unknown as string);
+    // Second call: oci raw-request
+    execMock.mockReturnValueOnce(
+      Buffer.from(JSON.stringify({ data: { token: jwt } })) as unknown as string
+    );
+
+    const dockerConfigDir = tmpDir();
+    const result = ocirBearerLogin({ region: 'sa-saopaulo-1', logger, dockerConfigDir });
+
+    expect(result.OCIR_REGISTRY).toBe('gru.ocir.io');
+    expect(result.OCIR_URL).toBe(`gru.ocir.io/${namespace}`);
+    expect(result.DOCKER_CONFIG).toBe(dockerConfigDir);
+    expect(result.REGISTRY_AUTH_FILE).toBe(join(dockerConfigDir, 'config.json'));
+
+    const cfg = JSON.parse(readFileSync(join(dockerConfigDir, 'config.json'), 'utf8')) as {
+      auths: Record<string, { auth: string }>;
+    };
+    const decoded = Buffer.from(cfg.auths['gru.ocir.io'].auth, 'base64').toString('utf8');
+    expect(decoded).toBe(`BEARER_TOKEN:${jwt}`);
+    expect(logger.mask).toHaveBeenCalledWith(jwt);
+  });
+
+  it('passes raw-request to correct registry endpoint', () => {
+    execMock.mockReturnValueOnce(Buffer.from('myns\n') as unknown as string);
+    execMock.mockReturnValueOnce(
+      Buffer.from(JSON.stringify({ data: { token: 'tok' } })) as unknown as string
+    );
+
+    ocirBearerLogin({ region: 'us-ashburn-1', logger, dockerConfigDir: tmpDir() });
+
+    const rawRequestCall = execMock.mock.calls[1];
+    const args = rawRequestCall?.[1] as string[];
+    expect(args).toContain('https://iad.ocir.io/20180419/docker/token');
+  });
+
+  it('throws when bearer token is missing from response data', () => {
+    execMock.mockReturnValueOnce(Buffer.from('myns\n') as unknown as string);
+    execMock.mockReturnValueOnce(Buffer.from(JSON.stringify({ data: {} })) as unknown as string);
+
+    expect(() => ocirBearerLogin({ region: 'us-ashburn-1', logger, dockerConfigDir: tmpDir() })).toThrow(
+      /OCIR bearer token not found/
     );
   });
 
-  it('returns the host unchanged when there is no path component', () => {
-    expect(deriveOcirRegistry('ocir.us-ashburn-1.oci.oraclecloud.com')).toBe(
-      'ocir.us-ashburn-1.oci.oraclecloud.com'
+  it('throws when response is missing a data object', () => {
+    execMock.mockReturnValueOnce(Buffer.from('myns\n') as unknown as string);
+    execMock.mockReturnValueOnce(Buffer.from(JSON.stringify({ status: '200 OK' })) as unknown as string);
+
+    expect(() => ocirBearerLogin({ region: 'eu-frankfurt-1', logger, dockerConfigDir: tmpDir() })).toThrow(
+      /missing a 'data' object/
     );
   });
 });
@@ -311,38 +261,46 @@ describe('OCI files', () => {
   });
 });
 
+// OcirConfig shape used internally by writeContainerAuth.
+const bearerOcirConfig = {
+  OCIR_USERNAME: 'BEARER_TOKEN',
+  OCIR_PASSWORD: 'eyJhbGciOiJSUzI1NiJ9.test.sig',
+  OCIR_URL: 'gru.ocir.io/mytenancy',
+  OCIR_REGISTRY: 'gru.ocir.io'
+};
+
 describe('writeContainerAuth', () => {
   it('writes auths[registry].auth as base64("user:pass")', () => {
     const dir = mkdtempSync(join(tmpdir(), 'oci-docker-'));
-    const result = writeContainerAuth(fullOcirConfig, { dockerConfigDir: dir });
+    const result = writeContainerAuth(bearerOcirConfig, { dockerConfigDir: dir });
 
     expect(result.dockerConfigDir).toBe(dir);
     expect(result.configPath).toBe(join(dir, 'config.json'));
 
     const cfg = JSON.parse(readFileSync(result.configPath, 'utf8')) as { auths: Record<string, { auth: string }> };
-    expect(cfg.auths[fullOcirConfig.OCIR_REGISTRY]).toBeDefined();
+    expect(cfg.auths[bearerOcirConfig.OCIR_REGISTRY]).toBeDefined();
 
-    const decoded = Buffer.from(cfg.auths[fullOcirConfig.OCIR_REGISTRY].auth, 'base64').toString('utf8');
-    expect(decoded).toBe(`${fullOcirConfig.OCIR_USERNAME}:${fullOcirConfig.OCIR_PASSWORD}`);
+    const decoded = Buffer.from(cfg.auths[bearerOcirConfig.OCIR_REGISTRY].auth, 'base64').toString('utf8');
+    expect(decoded).toBe(`${bearerOcirConfig.OCIR_USERNAME}:${bearerOcirConfig.OCIR_PASSWORD}`);
   });
 
   it('merges with existing config.json, preserving other auths', () => {
     const dir = mkdtempSync(join(tmpdir(), 'oci-docker-'));
     const existing = { auths: { 'other.registry.example.com': { auth: 'ZXhpc3Rpbmc=' } }, credsStore: 'osxkeychain' };
     const configPath = join(dir, 'config.json');
-    require('node:fs').writeFileSync(configPath, JSON.stringify(existing));
+    writeFileSync(configPath, JSON.stringify(existing));
 
-    writeContainerAuth(fullOcirConfig, { dockerConfigDir: dir });
+    writeContainerAuth(bearerOcirConfig, { dockerConfigDir: dir });
 
     const cfg = JSON.parse(readFileSync(configPath, 'utf8')) as typeof existing & { auths: Record<string, unknown> };
     expect(cfg.auths['other.registry.example.com']).toEqual({ auth: 'ZXhpc3Rpbmc=' });
-    expect(cfg.auths[fullOcirConfig.OCIR_REGISTRY]).toBeDefined();
+    expect(cfg.auths[bearerOcirConfig.OCIR_REGISTRY]).toBeDefined();
     expect(cfg.credsStore).toBe('osxkeychain');
   });
 
   it('writes mode 0600', () => {
     const dir = mkdtempSync(join(tmpdir(), 'oci-docker-'));
-    const result = writeContainerAuth(fullOcirConfig, { dockerConfigDir: dir });
+    const result = writeContainerAuth(bearerOcirConfig, { dockerConfigDir: dir });
     const mode = statSync(result.configPath).mode & 0o777;
     expect(mode).toBe(0o600);
   });
@@ -350,20 +308,20 @@ describe('writeContainerAuth', () => {
   it('creates the directory if it does not exist', () => {
     const base = mkdtempSync(join(tmpdir(), 'oci-docker-'));
     const nested = join(base, 'sub', 'dir');
-    const result = writeContainerAuth(fullOcirConfig, { dockerConfigDir: nested });
+    const result = writeContainerAuth(bearerOcirConfig, { dockerConfigDir: nested });
     const cfg = JSON.parse(readFileSync(result.configPath, 'utf8')) as { auths: Record<string, unknown> };
-    expect(cfg.auths[fullOcirConfig.OCIR_REGISTRY]).toBeDefined();
+    expect(cfg.auths[bearerOcirConfig.OCIR_REGISTRY]).toBeDefined();
   });
 
   it('recovers from malformed existing config.json and writes fresh', () => {
     const dir = mkdtempSync(join(tmpdir(), 'oci-docker-'));
     const configPath = join(dir, 'config.json');
-    require('node:fs').writeFileSync(configPath, 'not-json');
+    writeFileSync(configPath, 'not-json');
 
-    writeContainerAuth(fullOcirConfig, { dockerConfigDir: dir });
+    writeContainerAuth(bearerOcirConfig, { dockerConfigDir: dir });
 
     const cfg = JSON.parse(readFileSync(configPath, 'utf8')) as { auths: Record<string, unknown> };
-    expect(cfg.auths[fullOcirConfig.OCIR_REGISTRY]).toBeDefined();
+    expect(cfg.auths[bearerOcirConfig.OCIR_REGISTRY]).toBeDefined();
   });
 });
 

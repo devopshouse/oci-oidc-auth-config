@@ -9,13 +9,13 @@ branding:
 inputs:
   config_json:
     description: >
-      JSON string with all OCI + OCIR parameters in a single unified blob
+      JSON string with all OCI parameters in a single unified blob
       (the OCI_OIDC_CONFIG secret emitted by terraform-oci-oidc-federation).
       Required OCI keys: oci_idcs_endpoint, oci_client_id, oci_client_secret,
       oci_region, oci_tenancy_id, oci_compartment_id.
-      Optional OCIR keys: ocir_username, ocir_password, ocir_url (registry
-      derived automatically; when all three are absent OCIR export is skipped).
-      When provided, individual OCI and OCIR inputs are ignored.
+      Any ocir_* keys in the blob are ignored — OCIR auth is now performed
+      automatically via a short-lived bearer token (see ocir_login).
+      When provided, individual OCI inputs are ignored.
     required: false
     default: ''
   oci_idcs_endpoint:
@@ -62,35 +62,15 @@ inputs:
     description: OCI config profile name written to ~/.oci/config
     required: false
     default: DEFAULT
-  ocir_username:
-    description: >
-      OCIR login username in the form <namespace>/<username>.
-      Used only when config_json is not provided (individual override).
-    required: false
-    default: ''
-  ocir_password:
-    description: >
-      OCIR auth token (password) for Docker / Podman login.
-      Used only when config_json is not provided (individual override).
-    required: false
-    default: ''
-  ocir_url:
-    description: >
-      OCIR URL including namespace, e.g. ocir.<region>.oci.oraclecloud.com/<namespace>.
-      Used only when config_json is not provided (individual override).
-    required: false
-    default: ''
-  ocir_registry:
-    description: >
-      OCIR registry host, e.g. ocir.<region>.oci.oraclecloud.com.
-      Used only when config_json is not provided (individual override).
-    required: false
-    default: ''
   ocir_login:
     description: >
-      Write container auth config (~/.docker/config.json) automatically when OCIR
-      credentials are resolved, so subsequent steps can run docker/podman/kaniko
-      without a separate login step. Set to 'false' to skip. Default: 'true'.
+      Perform OCIR login automatically after OCI auth is set up.
+      The action derives the registry host from oci_region, fetches the tenancy
+      namespace, and obtains a short-lived Docker bearer token via the UPST —
+      no long-lived auth token or OCIR secret required.
+      Writes OCIR_REGISTRY, OCIR_URL, DOCKER_CONFIG, REGISTRY_AUTH_FILE to
+      GITHUB_ENV and ~/.docker/config.json so docker/podman/kaniko work without
+      an extra login step. Set to 'false' to skip. Default: 'true'.
     required: false
     default: 'true'
 
@@ -103,6 +83,12 @@ outputs:
     description: Compartment OCID
   oci_idcs_endpoint:
     description: IDCS identity domain URL
+  ocir_registry:
+    description: OCIR registry host (e.g. gru.ocir.io). Only set when ocir_login is true.
+  ocir_url:
+    description: >
+      OCIR URL including tenancy namespace (e.g. gru.ocir.io/mytenancy).
+      Use as the image name prefix. Only set when ocir_login is true.
 
 runs:
   using: node24

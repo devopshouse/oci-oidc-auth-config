@@ -1,45 +1,32 @@
 # Example: GitLab CI with two independent paths:
-#   1. `execute-oci-cli` uses setup-gitlab.sh for full OCI CLI auth
-#   2. `build-push-kaniko` uses setup-kaniko-auth.sh for OCIR/Kaniko only
+#   1. `execute-oci-cli`   — full OCI CLI auth via setup-gitlab.sh (Ubuntu runner)
+#   2. `build-push-kaniko` — OCIR build/push via Kaniko (custom kaniko-oci image)
 #
 # Prerequisites:
 #   Add a single masked CI/CD variable (Settings → CI/CD → Variables):
 #     OCI_OIDC_CONFIG_B64  — base64-encoded output of:
 #                            terraform output -raw ci_oidc_config_json | base64 -w0
 #
-# On Kubernetes-based runners, keep OCI CLI work and Kaniko work separate:
-#   - use setup-gitlab.sh only in Ubuntu jobs that need full OCI auth / `oci`
-#   - use setup-kaniko-auth.sh only in the Kaniko job
+#   No OCIR secrets needed. The action derives the registry from oci_region,
+#   fetches a short-lived Docker bearer token from the UPST, and writes
+#   /kaniko/.docker/config.json automatically.
 #
-# Podman build is not recommended on this Kubernetes runner because rootless
-# container builds can fail on fuse-overlayfs / ping_group_range.
-#
-# Docker example for reference only:
-#   image: ubuntu:24.04
-#   services:
-#     - docker:dind
-#   variables:
-#     DOCKER_HOST: tcp://docker:2376
-#     DOCKER_TLS_CERTDIR: /certs
-#   before_script:
-#     - apt-get update -qq > /dev/null 2>&1 && apt-get install -y -qq ca-certificates curl > /dev/null 2>&1
-#     - source <(curl -sSfL "$OCI_AUTH_BASE_URL/scripts/setup-gitlab.sh")
-#   script:
-#     - docker build -t "$OCIR_URL/$IMAGE_NAME:$CI_COMMIT_SHA" .
-#     - docker push "$OCIR_URL/$IMAGE_NAME:$CI_COMMIT_SHA"
-# This does not work on this Kubernetes runner as-is because the runner uses the
-# Kubernetes executor with non-privileged job pods, so the job has no usable
-# Docker daemon unless the runner is explicitly configured for privileged DinD.
+# kaniko-oci image (ghcr.io/devopshouse/oci-oidc-auth-config/kaniko-oci:v3):
+#   Alpine + Node 24 + OCI CLI + curl + /kaniko/executor binary.
+#   Allows running setup-gitlab.sh first (which installs OCI auth) and then
+#   the Kaniko executor — no separate auth step or docker login needed.
+
 variables:
   DEBIAN_FRONTEND: noninteractive
   IMAGE_NAME: acme
-  OCI_OIDC_AUTH_VERSION: v2
+  OCI_OIDC_AUTH_VERSION: v3
   OCI_AUTH_BASE_URL: https://raw.githubusercontent.com/devopshouse/oci-oidc-auth-config/${OCI_OIDC_AUTH_VERSION}
 
 stages:
   - validate
   - build
 
+# ── Full OCI CLI auth (Ubuntu runner) ────────────────────────────────────────
 execute-oci-cli:
   stage: validate
   image: ubuntu:24.04
@@ -53,17 +40,24 @@ execute-oci-cli:
     - source <(curl -sSfL "$OCI_AUTH_BASE_URL/scripts/setup-gitlab.sh")
     - oci compute instance list --limit 1
 
+# ── Kaniko build & push (kaniko-oci image) ───────────────────────────────────
 build-push-kaniko:
   stage: build
   image:
-    name: gcr.io/kaniko-project/executor:v1.24.0-debug
+    name: ghcr.io/devopshouse/oci-oidc-auth-config/kaniko-oci:v3
     entrypoint: [""]
 
+  id_tokens:
+    OCI_OIDC_TOKEN:
+      aud: https://cloud.oracle.com
+
   script:
-    - |
-      eval "$(wget -qO- "$OCI_AUTH_BASE_URL/scripts/setup-kaniko-auth.sh")"
-      /kaniko/executor \
-        --context "${CI_PROJECT_DIR}" \
-        --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
-        --destination "${OCIR_URL}/${IMAGE_NAME}:${CI_COMMIT_SHA}" \
+    # setup-gitlab.sh runs inside the kaniko-oci image (Node + OCI CLI already
+    # present). It exchanges the OIDC token for an OCI UPST, installs the bearer
+    # token into /kaniko/.docker/config.json, and exports OCIR_URL.
+    - source <(curl -sSfL "$OCI_AUTH_BASE_URL/scripts/setup-gitlab.sh")
+    - /kaniko/executor
+        --context "${CI_PROJECT_DIR}"
+        --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+        --destination "${OCIR_URL}/${IMAGE_NAME}:${CI_COMMIT_SHA}"
         --destination "${OCIR_URL}/${IMAGE_NAME}:latest"
