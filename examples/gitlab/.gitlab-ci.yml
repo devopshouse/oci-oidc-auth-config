@@ -19,7 +19,7 @@
 variables:
   DEBIAN_FRONTEND: noninteractive
   IMAGE_NAME: acme
-  OCI_OIDC_AUTH_VERSION: v3
+  OCI_OIDC_AUTH_VERSION: feat/gitlab-support-v3-ts
   OCI_AUTH_BASE_URL: https://raw.githubusercontent.com/devopshouse/oci-oidc-auth-config/${OCI_OIDC_AUTH_VERSION}
 
 stages:
@@ -44,7 +44,7 @@ execute-oci-cli:
 build-push-kaniko:
   stage: build
   image:
-    name: ghcr.io/devopshouse/oci-oidc-auth-config/kaniko-oci:v3
+    name: ghcr.io/devopshouse/kaniko-oci:latest
     entrypoint: [""]
 
   id_tokens:
