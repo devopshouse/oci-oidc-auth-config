@@ -3,8 +3,8 @@ import {
   exchangeOidcForUpst,
   getGithubOidcToken,
   installOciCli,
+  ocirBearerLogin,
   resolveUnifiedConfig,
-  writeContainerAuth,
   writeGithubEnv,
   writeOciFiles
 } from './core.js';
@@ -17,7 +17,7 @@ const logger = {
 };
 
 async function run(): Promise<void> {
-  const { oci: config, ocir } = resolveUnifiedConfig({
+  const { oci: config } = resolveUnifiedConfig({
     configJson: getInput('config_json') || undefined,
     ociValues: {
       oci_idcs_endpoint: getInput('oci_idcs_endpoint') || undefined,
@@ -26,12 +26,6 @@ async function run(): Promise<void> {
       oci_region: getInput('oci_region') || undefined,
       oci_tenancy_id: getInput('oci_tenancy_id') || undefined,
       oci_compartment_id: getInput('oci_compartment_id') || undefined
-    },
-    ocirValues: {
-      OCIR_USERNAME: getInput('ocir_username') || undefined,
-      OCIR_PASSWORD: getInput('ocir_password') || undefined,
-      OCIR_URL: getInput('ocir_url') || undefined,
-      OCIR_REGISTRY: getInput('ocir_registry') || undefined
     }
   });
 
@@ -44,9 +38,10 @@ async function run(): Promise<void> {
     logger
   });
 
+  const profile = getInput('oci_profile') || 'DEFAULT';
   const exchange = await exchangeOidcForUpst({ oidcToken, config, logger });
   const files = writeOciFiles({
-    profile: getInput('oci_profile') || 'DEFAULT',
+    profile,
     config,
     upst: exchange.upst,
     privateKeyPem: exchange.privateKeyPem,
@@ -57,25 +52,28 @@ async function run(): Promise<void> {
     OCI_CLI_AUTH: 'security_token',
     PYTHONWARNINGS: 'ignore::SyntaxWarning'
   });
-  if (ocir) {
-    logger.mask(ocir.OCIR_PASSWORD);
-    writeGithubEnv(ocir);
 
-    if (getInput('ocir_login') !== 'false') {
-      const { configPath, dockerConfigDir } = writeContainerAuth(ocir);
-      writeGithubEnv({ DOCKER_CONFIG: dockerConfigDir, REGISTRY_AUTH_FILE: configPath });
-      logger.info(`Container auth written to ${configPath} (DOCKER_CONFIG=${dockerConfigDir}).`);
-    }
-  }
-
+  // OCI CLI must be on PATH before the bearer login step.
   installOciCli(logger);
   addPath(`${process.env.HOME}/.local/bin`);
+
+  if (getInput('ocir_login') !== 'false') {
+    const ocir = ocirBearerLogin({ region: config.oci_region, profile, logger });
+    writeGithubEnv({
+      OCIR_REGISTRY: ocir.OCIR_REGISTRY,
+      OCIR_URL: ocir.OCIR_URL,
+      DOCKER_CONFIG: ocir.DOCKER_CONFIG,
+      REGISTRY_AUTH_FILE: ocir.REGISTRY_AUTH_FILE
+    });
+    setOutput('ocir_registry', ocir.OCIR_REGISTRY);
+    setOutput('ocir_url', ocir.OCIR_URL);
+  }
 
   setOutput('oci_region', config.oci_region);
   setOutput('oci_tenancy_id', config.oci_tenancy_id);
   setOutput('oci_compartment_id', config.oci_compartment_id);
   setOutput('oci_idcs_endpoint', config.oci_idcs_endpoint);
-  logger.info(`${files.configPath} and ${files.cliRcPath} written (profile: ${getInput('oci_profile') || 'DEFAULT'}, region: ${config.oci_region}).`);
+  logger.info(`${files.configPath} and ${files.cliRcPath} written (profile: ${profile}, region: ${config.oci_region}).`);
 }
 
 run().catch((error: unknown) => {

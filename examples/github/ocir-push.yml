@@ -7,11 +7,13 @@
 # Prerequisites:
 #   - OCI_OIDC_CONFIG secret: unified JSON emitted by terraform-oci-oidc-federation
 #     (terraform output -raw ci_oidc_config_json)
-#     Contains both OCI connection fields and OCIR credentials in a single blob.
+#     Contains the six required OCI connection fields.
+#     No OCIR secrets needed — the action derives the registry and obtains
+#     a short-lived bearer token automatically.
 #
-# The action exports OCIR_USERNAME, OCIR_PASSWORD, OCIR_URL, OCIR_REGISTRY to
+# The action exports OCIR_REGISTRY, OCIR_URL, DOCKER_CONFIG, REGISTRY_AUTH_FILE to
 # GITHUB_ENV and writes ~/.docker/config.json automatically (ocir_login: true by
-# default) — no separate docker login or kaniko config step needed.
+# default) — no separate docker login step needed.
 #
 # Docker and Podman are pre-installed on ubuntu-latest runners.
 # Kaniko runs via `docker run` so no separate install is needed.
@@ -42,12 +44,13 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup OCI OIDC Auth
-        uses: devopshouse/oci-oidc-auth-config@v2
+        uses: devopshouse/oci-oidc-auth-config@v3
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
-          # ocir_login: true (default) — writes ~/.docker/config.json automatically.
+          # ocir_login: true (default) — derives registry from oci_region, fetches
+          # bearer token via UPST, writes ~/.docker/config.json automatically.
 
-      # OCIR_USERNAME / OCIR_PASSWORD / OCIR_URL / OCIR_REGISTRY are now in GITHUB_ENV.
+      # OCIR_REGISTRY / OCIR_URL are now in GITHUB_ENV.
       # ~/.docker/config.json is already written — no docker login step needed.
 
       - name: Build and push
@@ -67,11 +70,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup OCI OIDC Auth
-        uses: devopshouse/oci-oidc-auth-config@v2
+        uses: devopshouse/oci-oidc-auth-config@v3
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
-          # ocir_login: true (default) — writes ~/.docker/config.json (REGISTRY_AUTH_FILE
-          # env var is also set, which podman honours as a fallback).
+          # ocir_login: true (default) — writes REGISTRY_AUTH_FILE which podman honours.
 
       # No podman login step needed.
 
@@ -94,7 +96,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup OCI OIDC Auth
-        uses: devopshouse/oci-oidc-auth-config@v2
+        uses: devopshouse/oci-oidc-auth-config@v3
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
           # ocir_login: true (default) — writes ~/.docker/config.json for Kaniko to use.

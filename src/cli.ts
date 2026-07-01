@@ -4,8 +4,8 @@ import {
   exchangeOidcForUpst,
   getGitlabOidcToken,
   installOciCli,
+  ocirBearerLogin,
   resolveUnifiedConfig,
-  writeContainerAuth,
   writeOciFiles
 } from './core.js';
 
@@ -18,7 +18,7 @@ const logger = {
 
 async function run(): Promise<void> {
   const profile = process.env.OCI_PROFILE || 'DEFAULT';
-  const { oci: config, ocir } = resolveUnifiedConfig({
+  const { oci: config } = resolveUnifiedConfig({
     configJsonBase64: process.env.OCI_OIDC_CONFIG_B64,
     configJson: process.env.OCI_OIDC_CONFIG,
     env: process.env
@@ -44,24 +44,22 @@ async function run(): Promise<void> {
     OCI_CLI_AUTH: 'security_token',
     PYTHONWARNINGS: 'ignore::SyntaxWarning'
   };
-  if (ocir) {
-    logger.mask(ocir.OCIR_PASSWORD);
-    Object.assign(exports, ocir);
 
-    if (process.env.OCIR_LOGIN !== 'false') {
-      const { configPath, dockerConfigDir } = writeContainerAuth(ocir);
-      exports.DOCKER_CONFIG = dockerConfigDir;
-      exports.REGISTRY_AUTH_FILE = configPath; // podman / buildah honour this
-      logger.info(`Container auth written to ${configPath} (DOCKER_CONFIG=${dockerConfigDir}).`);
-    }
+  // OCI CLI must be on PATH before the bearer login step.
+  if (process.env.INSTALL_OCI_CLI !== 'false') {
+    installOciCli(logger);
+  }
+
+  if (process.env.OCIR_LOGIN !== 'false') {
+    const ocir = ocirBearerLogin({ region: config.oci_region, profile, logger });
+    exports.OCIR_REGISTRY = ocir.OCIR_REGISTRY;
+    exports.OCIR_URL = ocir.OCIR_URL;
+    exports.DOCKER_CONFIG = ocir.DOCKER_CONFIG;
+    exports.REGISTRY_AUTH_FILE = ocir.REGISTRY_AUTH_FILE;
   }
 
   if (process.env.OCI_AUTH_ENV_FILE) {
     appendExports(process.env.OCI_AUTH_ENV_FILE, exports);
-  }
-
-  if (process.env.INSTALL_OCI_CLI !== 'false') {
-    installOciCli(logger);
   }
 
   logger.info(`${files.configPath} and ${files.cliRcPath} written (profile: ${profile}, region: ${config.oci_region}).`);

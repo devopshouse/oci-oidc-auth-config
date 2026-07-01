@@ -13,12 +13,85 @@ export type OciConfig = {
   oci_compartment_id: string;
 };
 
-export type OcirConfig = {
+// Internal shape used by writeContainerAuth.
+type OcirConfig = {
   OCIR_USERNAME: string;
   OCIR_PASSWORD: string;
   OCIR_URL: string;
   OCIR_REGISTRY: string;
 };
+
+/** Result of a successful OCIR bearer login. Exported values for GITHUB_ENV / env.sh. */
+export type OcirBearerResult = {
+  OCIR_REGISTRY: string;
+  OCIR_URL: string;
+  DOCKER_CONFIG: string;
+  REGISTRY_AUTH_FILE: string;
+};
+
+/**
+ * Maps OCI region identifiers to their three-letter OCIR region keys.
+ * Format: <region-key>.ocir.io
+ * Source: https://docs.oracle.com/en-us/iaas/Content/Registry/Concepts/registryprerequisites.htm
+ */
+export const REGION_KEY_MAP: Readonly<Record<string, string>> = {
+  'af-johannesburg-1': 'jnb',
+  'ap-chiyoda-1': 'nja',
+  'ap-chuncheon-1': 'yny',
+  'ap-hyderabad-1': 'hyd',
+  'ap-ibaraki-1': 'uky',
+  'ap-melbourne-1': 'mel',
+  'ap-mumbai-1': 'bom',
+  'ap-osaka-1': 'kix',
+  'ap-seoul-1': 'icn',
+  'ap-singapore-1': 'sin',
+  'ap-sydney-1': 'syd',
+  'ap-tokyo-1': 'nrt',
+  'ca-montreal-1': 'yul',
+  'ca-toronto-1': 'yyz',
+  'eu-amsterdam-1': 'ams',
+  'eu-frankfurt-1': 'fra',
+  'eu-madrid-1': 'mad',
+  'eu-marseille-1': 'mrs',
+  'eu-milan-1': 'lin',
+  'eu-paris-1': 'cdg',
+  'eu-stockholm-1': 'arn',
+  'eu-zurich-1': 'zrh',
+  'il-jerusalem-1': 'mtl',
+  'me-abudhabi-1': 'auh',
+  'me-dubai-1': 'dxb',
+  'me-jeddah-1': 'jed',
+  'me-riyadh-1': 'ruh',
+  'mx-monterrey-1': 'mty',
+  'mx-queretaro-1': 'qro',
+  'sa-bogota-1': 'bog',
+  'sa-santiago-1': 'scl',
+  'sa-saopaulo-1': 'gru',
+  'sa-vinhedo-1': 'vcp',
+  'uk-cardiff-1': 'cwl',
+  'uk-london-1': 'lhr',
+  'us-ashburn-1': 'iad',
+  'us-chicago-1': 'ord',
+  'us-phoenix-1': 'phx',
+  'us-saltlake-2': 'slc',
+  'us-sanjose-1': 'sjc'
+};
+
+/**
+ * Returns the OCIR registry host for the given region.
+ * Throws a descriptive error if the region is not in the map.
+ */
+export function regionToRegistry(region: string): string {
+  const key = REGION_KEY_MAP[region];
+  if (!key) {
+    const known = Object.keys(REGION_KEY_MAP).sort().join(', ');
+    throw new Error(
+      `Unknown OCI region "${region}" — cannot derive OCIR registry host. ` +
+      `Known regions: ${known}.`
+    );
+  }
+  return `${key}.ocir.io`;
+}
 
 export type Env = Record<string, string | undefined>;
 
@@ -47,25 +120,6 @@ const CONFIG_KEYS: Array<keyof OciConfig> = [
 ];
 
 export const REQUIRED_CONFIG_KEYS = [...CONFIG_KEYS];
-
-// Required keys for OCIR. ocir_registry is optional — derived from ocir_url when absent.
-const OCIR_REQUIRED_INPUT_KEYS = ['ocir_username', 'ocir_password', 'ocir_url'] as const;
-
-// Map from canonical lowercase input key → uppercase OcirConfig field name.
-const OCIR_KEY_MAP: Record<string, keyof OcirConfig> = {
-  ocir_username: 'OCIR_USERNAME',
-  ocir_password: 'OCIR_PASSWORD',
-  ocir_url: 'OCIR_URL',
-  ocir_registry: 'OCIR_REGISTRY'
-};
-
-/**
- * Derives the OCIR registry host from an OCIR URL that includes a namespace path.
- * e.g. "ocir.sa-saopaulo-1.oci.oraclecloud.com/myns" → "ocir.sa-saopaulo-1.oci.oraclecloud.com"
- */
-export function deriveOcirRegistry(url: string): string {
-  return url.split('/')[0];
-}
 
 export function upperEnvName(key: string): string {
   return key.toUpperCase();
@@ -111,115 +165,6 @@ export function resolveOciConfig(input: {
   return resolved;
 }
 
-export function resolveOcirConfig(input: {
-  configJson?: string;
-  configJsonBase64?: string;
-  env?: Env;
-  values?: Partial<OcirConfig>;
-}): OcirConfig | undefined {
-  const configJsonBase64 = input.configJsonBase64?.trim();
-  if (configJsonBase64) {
-    const decoded = Buffer.from(configJsonBase64, 'base64').toString('utf8');
-    return parseOcirConfigJson(decoded, 'OCI_OIDC_CONFIG_B64 decoded value');
-  }
-
-  const configJson = input.configJson?.trim();
-  if (configJson) {
-    return parseOcirConfigJson(configJson, 'OCI_OIDC_CONFIG');
-  }
-
-  const env = input.env ?? process.env;
-  const values = input.values ?? {};
-
-  // Build a case-insensitive lookup from both values and env.
-  // Both lowercase (from Terraform module) and UPPERCASE (legacy) keys are accepted.
-  const lookup: Record<string, string> = {};
-  for (const [k, v] of Object.entries(values)) {
-    if (typeof v === 'string' && v) lookup[k.toLowerCase()] = v;
-  }
-  for (const [k, v] of Object.entries(env)) {
-    if (typeof v === 'string' && v) lookup[k.toLowerCase()] ??= v;
-  }
-
-  const present: string[] = [];
-  const missing: string[] = [];
-  const resolved = {} as OcirConfig;
-
-  for (const inputKey of OCIR_REQUIRED_INPUT_KEYS) {
-    const value = lookup[inputKey];
-    if (value) {
-      resolved[OCIR_KEY_MAP[inputKey]] = value;
-      present.push(inputKey);
-    } else {
-      missing.push(inputKey);
-    }
-  }
-
-  if (present.length === 0) {
-    return undefined;
-  }
-
-  if (missing.length > 0) {
-    throw new Error(
-      `Partial OCIR configuration: missing ${missing.join(', ')}. Supply OCI_OIDC_CONFIG_B64, OCI_OIDC_CONFIG, or all three individual OCIR_* variables (ocir_username, ocir_password, ocir_url).`
-    );
-  }
-
-  // ocir_registry is optional — derive from the URL when absent.
-  resolved.OCIR_REGISTRY = lookup['ocir_registry'] ?? deriveOcirRegistry(resolved.OCIR_URL);
-
-  return resolved;
-}
-
-function parseOcirConfigJson(rawJson: string, sourceLabel: string): OcirConfig | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawJson);
-  } catch (error) {
-    throw new Error(`${sourceLabel} is not valid JSON: ${(error as Error).message}`);
-  }
-
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${sourceLabel} must be a JSON object.`);
-  }
-
-  const record = parsed as Record<string, unknown>;
-  const resolved = {} as OcirConfig;
-  const present: string[] = [];
-  const missing: string[] = [];
-
-  // Build a case-insensitive key map so both "ocir_username" (Terraform module)
-  // and "OCIR_USERNAME" (legacy) are accepted.
-  const lc: Record<string, string> = {};
-  for (const [k, v] of Object.entries(record)) {
-    if (typeof v === 'string') lc[k.toLowerCase()] = v;
-  }
-
-  for (const inputKey of OCIR_REQUIRED_INPUT_KEYS) {
-    const value = lc[inputKey];
-    if (!value || value.trim() === '') {
-      missing.push(inputKey);
-    } else {
-      resolved[OCIR_KEY_MAP[inputKey]] = value;
-      present.push(inputKey);
-    }
-  }
-
-  // No OCIR keys in blob — caller opted out of OCIR (e.g. no create_ocir_user).
-  if (present.length === 0) {
-    return undefined;
-  }
-
-  if (missing.length > 0) {
-    throw new Error(`Missing required key(s) in ${sourceLabel}: ${missing.join(', ')}`);
-  }
-
-  // ocir_registry is optional — derive from the URL when absent.
-  resolved.OCIR_REGISTRY = lc['ocir_registry']?.trim() || deriveOcirRegistry(resolved.OCIR_URL);
-
-  return resolved;
-}
-
 function parseConfigJson(rawJson: string, sourceLabel: string): OciConfig {
   let parsed: unknown;
   try {
@@ -253,43 +198,31 @@ function parseConfigJson(rawJson: string, sourceLabel: string): OciConfig {
 }
 
 /**
- * Resolves both OCI and OCIR configuration from a single unified JSON blob
+ * Resolves OCI configuration from a single unified JSON blob
  * (OCI_OIDC_CONFIG / OCI_OIDC_CONFIG_B64) or falls back to individual env vars.
  *
- * The unified blob is the output of the `terraform-oci-oidc-federation` module:
- * one flat object with both oci_* and ocir_* fields.
- *
- * OCIR fields are optional in the JSON path — if all three required keys
- * (ocir_username, ocir_password, ocir_url) are absent or empty, `ocir` is
- * undefined rather than an error. When using individual env vars and none of
- * the OCIR_* vars are set, `ocir` is also undefined.
+ * The unified blob is the output of the `terraform-oci-oidc-federation` module.
+ * Any ocir_* fields in the blob are intentionally ignored — OCIR login is now
+ * performed via a short-lived bearer token derived from the UPST (see ocirBearerLogin).
  */
 export function resolveUnifiedConfig(input: {
   configJson?: string;
   configJsonBase64?: string;
   env?: Env;
   ociValues?: Partial<OciConfig>;
-  ocirValues?: Partial<OcirConfig>;
-}): { oci: OciConfig; ocir: OcirConfig | undefined } {
+}): { oci: OciConfig } {
   const configJsonBase64 = input.configJsonBase64?.trim();
   if (configJsonBase64) {
     const decoded = Buffer.from(configJsonBase64, 'base64').toString('utf8');
-    const oci = parseConfigJson(decoded, 'OCI_OIDC_CONFIG_B64 decoded value');
-    const ocir = parseOcirConfigJson(decoded, 'OCI_OIDC_CONFIG_B64 decoded value');
-    return { oci, ocir };
+    return { oci: parseConfigJson(decoded, 'OCI_OIDC_CONFIG_B64 decoded value') };
   }
 
   const configJson = input.configJson?.trim();
   if (configJson) {
-    const oci = parseConfigJson(configJson, 'config_json');
-    const ocir = parseOcirConfigJson(configJson, 'config_json');
-    return { oci, ocir };
+    return { oci: parseConfigJson(configJson, 'config_json') };
   }
 
-  // Fall back to individual env vars / explicit values
-  const oci = resolveOciConfig({ env: input.env, values: input.ociValues });
-  const ocir = resolveOcirConfig({ env: input.env, values: input.ocirValues });
-  return { oci, ocir };
+  return { oci: resolveOciConfig({ env: input.env, values: input.ociValues }) };
 }
 
 export function parseJwtPayload(token: string): Record<string, unknown> {
@@ -567,6 +500,92 @@ export function installOciCli(logger: Logger): void {
     stdio: 'pipe',
     env: { ...process.env, PATH: `${join(homedir(), '.local/bin')}:${process.env.PATH ?? ''}` }
   });
+}
+
+/**
+ * Logs in to OCIR using a short-lived bearer token derived from the active OCI UPST profile.
+ *
+ * Steps:
+ *  1. Derives the OCIR registry host from `region` via REGION_KEY_MAP.
+ *  2. Fetches the tenancy Object Storage namespace (`oci os ns get`).
+ *  3. Obtains a short-lived Docker bearer token (`oci raw-request GET /20180419/docker/token`).
+ *  4. Writes ~/.docker/config.json (or DOCKER_CONFIG) with the bearer credentials.
+ *
+ * The OCI CLI must be installed and the security-token profile written before calling.
+ * All `oci` invocations use OCI_CLI_AUTH=security_token and the PATH that includes
+ * ~/.local/bin so the CLI installed by installOciCli is reachable.
+ */
+export function ocirBearerLogin(input: {
+  region: string;
+  profile?: string;
+  dockerConfigDir?: string;
+  logger: Logger;
+  /** Override the oci CLI executor — used in tests. Defaults to process.env. */
+  ociEnvOverride?: Env;
+}): OcirBearerResult {
+  const registry = regionToRegistry(input.region);
+  const localBin = join(homedir(), '.local/bin');
+  const ociEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...(input.ociEnvOverride ?? {}),
+    PATH: `${localBin}:${process.env.PATH ?? ''}`,
+    OCI_CLI_AUTH: 'security_token',
+    PYTHONWARNINGS: 'ignore::SyntaxWarning'
+  };
+  if (input.profile && input.profile !== 'DEFAULT') {
+    ociEnv['OCI_CLI_PROFILE'] = input.profile;
+  }
+
+  input.logger.info(`Fetching OCIR namespace for registry ${registry}…`);
+  const nsRaw = execFileSync('oci', ['os', 'ns', 'get', '--query', 'data', '--raw-output'], {
+    stdio: 'pipe',
+    env: ociEnv
+  })
+    .toString()
+    .trim();
+  if (!nsRaw) {
+    throw new Error('oci os ns get returned an empty namespace.');
+  }
+  const namespace = nsRaw;
+  const ocirUrl = `${registry}/${namespace}`;
+
+  input.logger.info(`Fetching OCIR bearer token for ${registry}…`);
+  const rawResponse = execFileSync(
+    'oci',
+    ['raw-request', '--http-method', 'GET', '--target-uri', `https://${registry}/20180419/docker/token`],
+    { stdio: 'pipe', env: ociEnv }
+  ).toString();
+
+  const parsed = parseJsonObject(rawResponse, 'OCIR bearer token response');
+  const data = parsed['data'];
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(`OCIR bearer token response is missing a 'data' object: ${rawResponse}`);
+  }
+  const bearerJwt = (data as Record<string, unknown>)['token'];
+  if (typeof bearerJwt !== 'string' || !bearerJwt) {
+    throw new Error(`OCIR bearer token not found in response 'data': ${rawResponse}`);
+  }
+  input.logger.mask(bearerJwt);
+
+  const ocirConfig: OcirConfig = {
+    OCIR_USERNAME: 'BEARER_TOKEN',
+    OCIR_PASSWORD: bearerJwt,
+    OCIR_URL: ocirUrl,
+    OCIR_REGISTRY: registry
+  };
+
+  const { configPath, dockerConfigDir } = writeContainerAuth(ocirConfig, {
+    dockerConfigDir: input.dockerConfigDir
+  });
+
+  input.logger.info(`OCIR bearer auth written to ${configPath} (registry: ${registry}, url: ${ocirUrl}).`);
+
+  return {
+    OCIR_REGISTRY: registry,
+    OCIR_URL: ocirUrl,
+    DOCKER_CONFIG: dockerConfigDir,
+    REGISTRY_AUTH_FILE: configPath
+  };
 }
 
 export function writeGithubEnv(values: Record<string, string>, env?: Env): void {
