@@ -45,11 +45,8 @@ variable "ci_platforms" {
 
 variable "github" {
   type = object({
-    branch       = optional(string, "main")
-    repositories = optional(list(object({
-      path = string
-      ref  = optional(string, null) # overrides github.branch for this repo
-    })), [])
+    branch         = optional(string, "main")
+    repositories   = optional(any, []) # list(string) or list(object({path,ref?}))
     create_secrets = optional(bool, true)
   })
   description = "GitHub Actions OIDC configuration."

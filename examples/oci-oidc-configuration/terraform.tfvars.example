@@ -13,9 +13,11 @@ ci_platforms = ["github"]
 github = {
   branch = "main"
   repositories = [
-    { path = "<YOUR_ORG>/<YOUR_REPO>" },        # e.g. my-org/my-repo
-    # per-repo branch override (optional):
-    # { path = "<YOUR_ORG>/hotfix-service", ref = "hotfix" },
+    "<YOUR_ORG>/<YOUR_REPO>",                              # string — uses global branch
+    # { path = "<YOUR_ORG>/app" },                         # object without override — same as string
+    # { path = "<YOUR_ORG>/app", ref = "develop" },        # exact branch override
+    # ref="*" → matched via repository claim (any branch or tag accepted):
+    # { path = "<YOUR_ORG>/release-svc", ref = "*" },
   ]
   create_secrets = true   # writes OCI_OIDC_CONFIG to each repo automatically
 }
