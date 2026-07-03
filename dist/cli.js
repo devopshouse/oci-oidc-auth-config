@@ -514,6 +514,7 @@ async function run() {
         configJson: process.env.OCI_OIDC_CONFIG,
         env: process.env
     });
+    logger.info(`OCI auth version: ${process.env.OCI_OIDC_AUTH_VERSION ?? 'main'}`);
     const token = getGitlabOidcToken({ env: process.env, logger });
     const exchange = await exchangeOidcForUpst({ oidcToken: token, config, logger });
     const files = writeOciFiles({
