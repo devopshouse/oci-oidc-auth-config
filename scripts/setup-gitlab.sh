@@ -44,6 +44,8 @@ _OCI_AUTH_BIN_DIR="${UV_TOOL_BIN_DIR:-${_OCI_AUTH_BIN_DEFAULT:-/usr/local/bin}}"
 (
   set -euo pipefail
 
+  echo "OCI auth version: ${_OCI_AUTH_BASE##*/}"
+
   export HOME="$_OCI_AUTH_HOME"
   export OCI_AUTH_ENV_FILE="$_OCI_AUTH_ENV_FILE"
   export UV_TOOL_BIN_DIR="$_OCI_AUTH_BIN_DIR"
