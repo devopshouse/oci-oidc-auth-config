@@ -33,11 +33,12 @@ github = {
 # gitlab = {
 #   issuer   = "https://gitlab.com"             # override for self-managed GitLab
 #   audience = "https://cloud.oracle.com"
-#   ref      = "main"
-#   ref_type = "branch"
+#   ref      = "main"                           # global default ref
+#   ref_type = "branch"                         # global default ref_type
 #   projects = [
-#     { path = "<YOUR_GROUP>/<YOUR_PROJECT>" },  # e.g. my-group/my-project
-#     # per-project overrides (optional):
-#     # { path = "<YOUR_GROUP>/release-svc", ref_type = "tag", ref = "*" },
+#     { path = "<YOUR_GROUP>/<YOUR_PROJECT>" },                          # uses global ref/ref_type
+#     { path = "<YOUR_GROUP>/app", ref_type = "branch", ref = "main" }, # exact branch
+#     # ref="*" → matched via project_path claim (any tag or branch accepted):
+#     { path = "<YOUR_GROUP>/release-svc", ref_type = "tag", ref = "*" },
 #   ]
 # }
