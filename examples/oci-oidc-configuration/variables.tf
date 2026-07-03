@@ -45,8 +45,11 @@ variable "ci_platforms" {
 
 variable "github" {
   type = object({
-    branch         = optional(string, "main")
-    repositories   = optional(list(string), []) # format: org/repo
+    branch       = optional(string, "main")
+    repositories = optional(list(object({
+      path = string
+      ref  = optional(string, null) # overrides github.branch for this repo
+    })), [])
     create_secrets = optional(bool, true)
   })
   description = "GitHub Actions OIDC configuration."
@@ -55,11 +58,15 @@ variable "github" {
 
 variable "gitlab" {
   type = object({
-    issuer              = optional(string, "")
-    audience            = optional(string, "https://cloud.oracle.com")
-    ref                 = optional(string, "main")
-    ref_type            = optional(string, "branch")
-    projects            = optional(list(string), []) # format: group/project
+    issuer    = optional(string, "")
+    audience  = optional(string, "https://cloud.oracle.com")
+    ref       = optional(string, "main")
+    ref_type  = optional(string, "branch")
+    projects  = optional(list(object({
+      path     = string
+      ref      = optional(string, null) # overrides gitlab.ref for this project
+      ref_type = optional(string, null) # overrides gitlab.ref_type for this project
+    })), [])
     public_key_endpoint = optional(string, null)
   })
   description = "GitLab CI OIDC configuration. Required when \"gitlab\" ∈ ci_platforms."

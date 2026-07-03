@@ -11,10 +11,12 @@ github_owner = "<YOUR_GITHUB_ORG>"              # e.g. my-org
 ci_platforms = ["github"]
 
 github = {
+  branch = "main"
   repositories = [
-    "<YOUR_ORG>/<YOUR_REPO>",                   # e.g. my-org/my-repo
+    { path = "<YOUR_ORG>/<YOUR_REPO>" },        # e.g. my-org/my-repo
+    # per-repo branch override (optional):
+    # { path = "<YOUR_ORG>/hotfix-service", ref = "hotfix" },
   ]
-  branch         = "main"
   create_secrets = true   # writes OCI_OIDC_CONFIG to each repo automatically
 }
 
@@ -34,6 +36,8 @@ github = {
 #   ref      = "main"
 #   ref_type = "branch"
 #   projects = [
-#     "<YOUR_GROUP>/<YOUR_PROJECT>",             # e.g. my-group/my-project
+#     { path = "<YOUR_GROUP>/<YOUR_PROJECT>" },  # e.g. my-group/my-project
+#     # per-project overrides (optional):
+#     # { path = "<YOUR_GROUP>/release-svc", ref_type = "tag", ref = "*" },
 #   ]
 # }
