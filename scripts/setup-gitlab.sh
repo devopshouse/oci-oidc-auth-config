@@ -39,7 +39,7 @@ _OCI_AUTH_DOCKER_CONFIG="${DOCKER_CONFIG:-${_OCI_AUTH_DOCKER_DEFAULT:-}}"
 _OCI_AUTH_ENV_FILE="${OCI_AUTH_ENV_FILE:-${_OCI_AUTH_ENV_DEFAULT:-$HOME/.oci-auth.env}}"
 _OCI_AUTH_BIN_DIR="${UV_TOOL_BIN_DIR:-${_OCI_AUTH_BIN_DEFAULT:-/usr/local/bin}}"
 
-echo "OCI auth version: ${_OCI_AUTH_BASE##*/}"
+echo "OCI auth version: ${_OCI_OIDC_AUTH_VERSION}"
 
 # Run the heavy lifting in a subshell so that set -euo pipefail and traps do not
 # leak into the caller's shell when this script is sourced with source <(...).
