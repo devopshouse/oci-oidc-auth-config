@@ -62,11 +62,7 @@ variable "gitlab" {
     audience  = optional(string, "https://cloud.oracle.com")
     ref       = optional(string, "main")
     ref_type  = optional(string, "branch")
-    projects  = optional(list(object({
-      path     = string
-      ref      = optional(string, null) # overrides gitlab.ref for this project
-      ref_type = optional(string, null) # overrides gitlab.ref_type for this project
-    })), [])
+    projects  = optional(any, []) # list(string) or list(object({path,ref?,ref_type?}))
     public_key_endpoint = optional(string, null)
   })
   description = "GitLab CI OIDC configuration. Required when \"gitlab\" ∈ ci_platforms."
