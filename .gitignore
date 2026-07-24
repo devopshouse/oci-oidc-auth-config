@@ -1,6 +1,7 @@
 .github/copilot-instructions.md
 .claude/**
-PLAN_*.md
+PLAN*.md
+HANDOFF*.md
 **/.terraform*
 node_modules/
 dist-cli/
