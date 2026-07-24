@@ -1,20 +1,26 @@
-# Example: GitLab CI with two independent paths:
+# Example: GitLab CI with three independent paths:
 #   1. `execute-oci-cli`   — full OCI CLI auth via setup-gitlab.sh (Ubuntu runner)
-#   2. `build-push-kaniko` — OCIR build/push via Kaniko (custom kaniko-oci image)
+#   2. `build-push-kaniko` — OCIR build/push via Kaniko (kaniko-oci image, no privileges)
+#   3. `build-push-podman` — OCIR build/push via Podman (podman-oci image, same docker
+#                            commands as GitHub Actions; requires runner with hostUsers: false)
 #
 # Prerequisites:
 #   Add a single masked CI/CD variable (Settings → CI/CD → Variables):
 #     OCI_OIDC_CONFIG_B64  — base64-encoded output of:
 #                            terraform output -raw ci_oidc_config_json | base64 -w0
 #
-#   No OCIR secrets needed. The action derives the registry from oci_region,
+#   No OCIR secrets needed. setup-gitlab.sh derives the registry from oci_region,
 #   fetches a short-lived Docker bearer token from the UPST, and writes
-#   /kaniko/.docker/config.json automatically.
+#   ~/.docker/config.json (or /kaniko/.docker/config.json for kaniko-oci) automatically.
 #
 # kaniko-oci image (ghcr.io/devopshouse/oci-oidc-auth-config/kaniko-oci:v3):
 #   Alpine + Node 24 + OCI CLI + curl + /kaniko/executor binary.
-#   Allows running setup-gitlab.sh first (which installs OCI auth) and then
-#   the Kaniko executor — no separate auth step or docker login needed.
+#   Works on any K8s runner (no privileged mode, no hostUsers required).
+#
+# podman-oci image (ghcr.io/devopshouse/oci-oidc-auth-config/podman-oci:v3):
+#   Alpine + Node 24 + OCI CLI + Podman. Commands are identical to GitHub Actions
+#   (docker build / docker push). Requires runner with hostUsers: false pod_spec
+#   and K8s nodes with kernel ≥ 5.12 (OKE OL8 UEK7 / OL9 UEK7+).
 
 variables:
   DEBIAN_FRONTEND: noninteractive
@@ -41,6 +47,7 @@ execute-oci-cli:
     - oci compute instance list --limit 1
 
 # ── Kaniko build & push (kaniko-oci image) ───────────────────────────────────
+# Works on any K8s runner. No hostUsers requirement.
 build-push-kaniko:
   stage: build
   image:
@@ -52,8 +59,7 @@ build-push-kaniko:
       aud: https://cloud.oracle.com
 
   script:
-    # setup-gitlab.sh runs inside the kaniko-oci image (Node + OCI CLI already
-    # present). It exchanges the OIDC token for an OCI UPST, installs the bearer
+    # setup-gitlab.sh exchanges the OIDC token for an OCI UPST, installs the bearer
     # token into /kaniko/.docker/config.json, and exports OCIR_URL.
     - source <(curl -sSfL "$OCI_AUTH_BASE_URL/scripts/setup-gitlab.sh")
     - /kaniko/executor
@@ -61,3 +67,24 @@ build-push-kaniko:
         --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
         --destination "${OCIR_URL}/${IMAGE_NAME}:${CI_COMMIT_SHA}"
         --destination "${OCIR_URL}/${IMAGE_NAME}:latest"
+
+# ── Podman build & push (podman-oci image) ───────────────────────────────────
+# Commands are identical to GitHub Actions. Requires runner with hostUsers: false.
+# See: infrastructure/modules/gitlab-runner/templates/runner-values.tpl
+build-push-podman:
+  stage: build
+  image:
+    name: ghcr.io/devopshouse/podman-oci:latest
+    entrypoint: [""]
+
+  id_tokens:
+    OCI_OIDC_TOKEN:
+      aud: https://cloud.oracle.com/gitlab
+
+  script:
+    # setup-gitlab.sh exchanges the OIDC token for an OCI UPST, installs the bearer
+    # token into /root/.docker/config.json (DOCKER_CONFIG), and exports OCIR_URL.
+    - source <(curl -sSfL "$OCI_AUTH_BASE_URL/scripts/setup-gitlab.sh")
+    - podman build -t "${OCIR_URL}/${IMAGE_NAME}:${CI_COMMIT_SHA}" -t "${OCIR_URL}/${IMAGE_NAME}:latest" "${CI_PROJECT_DIR}"
+    - podman push "${OCIR_URL}/${IMAGE_NAME}:${CI_COMMIT_SHA}"
+    - podman push "${OCIR_URL}/${IMAGE_NAME}:latest"
