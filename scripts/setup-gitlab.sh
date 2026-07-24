@@ -7,7 +7,8 @@
 #   # Option B — pipe form (simpler, but vars are NOT propagated; source the env file manually if needed)
 #   curl -sSfL https://raw.githubusercontent.com/devopshouse/oci-oidc-auth-config/${OCI_OIDC_AUTH_VERSION:-v2}/scripts/setup-gitlab.sh | bash
 #
-# Required env vars: OCI_OIDC_TOKEN (from id_tokens) or CI_JOB_JWT_FILE, plus either
+# Required env vars: CI_JOB_JWT_FILE, OCI_OIDC_TOKEN (GitLab id_tokens), or
+#   CI_JOB_JWT_V2 (legacy GitLab 15), plus either
 #   OCI_OIDC_CONFIG_B64  (base64-encoded unified JSON with all OCI + OCIR fields)
 #   OCI_OIDC_CONFIG      (plain unified JSON with all OCI + OCIR fields)
 #   or individual: OCI_IDCS_ENDPOINT/OCI_CLIENT_ID/OCI_CLIENT_SECRET/OCI_REGION/OCI_TENANCY_ID/OCI_COMPARTMENT_ID
@@ -76,9 +77,12 @@ _OCI_AUTH_BIN_DIR="${UV_TOOL_BIN_DIR:-${_OCI_AUTH_BIN_DEFAULT:-/usr/local/bin}}"
   cleanup() { rm -rf "$tmp_dir"; }
   trap cleanup EXIT
 
-  if [ -n "${OCI_OIDC_TOKEN:-}" ] && [ -z "${CI_JOB_JWT_FILE:-}" ]; then
-    printf '%s' "$OCI_OIDC_TOKEN" > "$tmp_dir/oci.jwt"
-    export CI_JOB_JWT_FILE="$tmp_dir/oci.jwt"
+  if [ -z "${CI_JOB_JWT_FILE:-}" ]; then
+    gitlab_oidc_token="${OCI_OIDC_TOKEN:-${CI_JOB_JWT_V2:-}}"
+    if [ -n "$gitlab_oidc_token" ]; then
+      printf '%s' "$gitlab_oidc_token" > "$tmp_dir/oci.jwt"
+      export CI_JOB_JWT_FILE="$tmp_dir/oci.jwt"
+    fi
   fi
 
   curl -sSfL "$_OCI_AUTH_BASE/dist/cli.js" -o "$tmp_dir/cli.js"
