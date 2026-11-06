@@ -28,6 +28,9 @@ RUN apk add --no-cache \
       ca-certificates \
       curl \
       bash \
+      git \
+      helm \
+      kubectl \
       python3 \
       py3-pip \
       podman \
