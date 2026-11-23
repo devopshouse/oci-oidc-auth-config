@@ -1,4 +1,9 @@
 #!/bin/sh
+# LEGACY: only for JSON blobs that still carry long-lived OCIR credentials
+# (ocir_username, ocir_password, ocir_url; terraform-oci-oidc-federation v1).
+# Current blobs have only the OCI fields: use the kaniko-oci image with setup-gitlab.sh,
+# which logs in to OCIR with a short-lived bearer token.
+#
 # Usage (sh — no process substitution):
 #   eval "$(wget -qO- "$OCI_AUTH_BASE_URL/scripts/setup-kaniko-auth.sh")"
 #   eval "$(curl -sSfL "$OCI_AUTH_BASE_URL/scripts/setup-kaniko-auth.sh")"
@@ -78,6 +83,13 @@ require_var() {
 }
 
 resolve_ocir_from_json
+
+if [ -z "${OCIR_USERNAME:-}" ] && [ -z "${OCIR_PASSWORD:-}" ]; then
+  echo "error: no OCIR credentials (ocir_username, ocir_password) in the config." >&2
+  echo "       This legacy script needs terraform-oci-oidc-federation v1 blobs; with current blobs use" >&2
+  echo "       the kaniko-oci image and setup-gitlab.sh (short-lived bearer token)." >&2
+  exit 1
+fi
 
 require_var OCIR_USERNAME
 require_var OCIR_PASSWORD
