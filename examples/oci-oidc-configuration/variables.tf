@@ -10,7 +10,7 @@ variable "oci_tenancy_id" {
 
 variable "oci_compartment_id" {
   type        = string
-  description = "OCID of the compartment where CI resources will be created."
+  description = "OCID of the compartment granted to the CI identity."
 }
 
 variable "oci_profile" {
@@ -21,20 +21,14 @@ variable "oci_profile" {
 
 variable "oci_identity_domain_name" {
   type        = string
-  description = "Display name of the Identity Domain (e.g., Default)."
+  description = "Display name of the existing Identity Domain that receives the CI identities."
   default     = "Default"
 }
 
-variable "oci_service_user_name" {
+variable "name_prefix" {
   type        = string
-  description = "Username for the OCI Identity Domain service user created for CI OIDC impersonation."
-  default     = "svc-ci-oidc"
-}
-
-variable "git_actions_group_name" {
-  type        = string
-  description = "IAM group name shared by all CI platforms federated via OIDC."
-  default     = "g-ci-oidc"
+  description = "Prefix of the generated user, group, application and policy names."
+  default     = "ci"
 }
 
 variable "ci_platforms" {
@@ -43,37 +37,39 @@ variable "ci_platforms" {
   default     = ["github"]
 }
 
-variable "github" {
-  type = object({
-    branch         = optional(string, "main")
-    repositories   = optional(any, []) # list(string) or list(object({path,ref?}))
-    create_secrets = optional(bool, true)
-  })
-  description = "GitHub Actions OIDC configuration."
-  default     = {}
+variable "github_owner" {
+  type        = string
+  description = "GitHub organisation or user that owns the repositories; configures the GitHub provider."
 }
 
-variable "gitlab" {
-  type = object({
-    issuer    = optional(string, "")
-    audience  = optional(string, "https://cloud.oracle.com")
-    ref       = optional(string, "main")
-    ref_type  = optional(string, "branch")
-    projects  = optional(any, []) # list(string) or list(object({path,ref?,ref_type?}))
-    public_key_endpoint = optional(string, null)
-  })
-  description = "GitLab CI OIDC configuration. Required when \"gitlab\" ∈ ci_platforms."
-  default     = {}
-}
-
-variable "ocir_allowed_repositories" {
+variable "github_repositories" {
   type        = list(string)
-  description = "OCIR repository names the OCIR user may push/pull. Empty allows broad access in the compartment."
+  description = "owner/repo paths authorized to impersonate the identity; each also receives the OCI_OIDC_CONFIG secret."
   default     = []
 }
 
-variable "github_owner" {
-  type        = string
-  description = "GitHub organisation or user that owns the repositories. Used to configure the GitHub provider."
-  default     = ""
+variable "github_refs" {
+  type        = list(string)
+  description = "Full refs accepted for every repository; [\"*\"] accepts any ref."
+  default     = ["refs/heads/main"]
+}
+
+variable "gitlab_oidc" {
+  type = object({
+    issuer              = optional(string, "")
+    audience            = optional(string, "https://cloud.oracle.com")
+    public_key_endpoint = optional(string)
+  })
+  description = "GitLab issuer and pipeline audience; required when ci_platforms includes gitlab."
+  default     = {}
+}
+
+variable "gitlab_project_refs" {
+  type = list(object({
+    path     = string
+    ref      = optional(string)
+    ref_type = optional(string)
+  }))
+  description = "GitLab projects authorized to impersonate the identity; ref and ref_type default to main and branch."
+  default     = []
 }
