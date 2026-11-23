@@ -57,13 +57,13 @@ Use the Terraform in [`examples/oci-oidc-configuration/`](examples/oci-oidc-conf
 
 #### 2. Create the `OCI_OIDC_CONFIG` secret
 
-When `github.create_secrets = true` (the default) the [`terraform-oci-oidc-federation`](https://github.com/devopshouse/terraform-oci-oidc-federation) module writes the `OCI_OIDC_CONFIG` secret to each GitHub repository automatically. To retrieve it manually:
+The [`terraform-oci-oidc-federation`](https://github.com/devopshouse/terraform-oci-oidc-federation) module writes the secret to every repository listed in `service_accounts[*].github.secret_repositories` (secret name from `github.secret_name`, `OCI_OIDC_CONFIG` by default). To retrieve the default account's value manually:
 
 ```sh
 terraform output -raw ci_oidc_config_json
 ```
 
-The secret is a single unified JSON blob with all OCI connection fields **and** OCIR credentials:
+The secret is a single JSON blob with the OCI connection fields. OCIR login needs no stored credential: the action derives it from the short-lived UPST (see [With OCIR](#with-ocir-docker--podman--kaniko)). Extra keys, such as the legacy `ocir_*` fields, are ignored:
 
 ```json
 {
@@ -72,10 +72,7 @@ The secret is a single unified JSON blob with all OCI connection fields **and** 
   "oci_client_secret":  "<confidential-app-client-secret>",
   "oci_region":         "sa-saopaulo-1",
   "oci_tenancy_id":     "ocid1.tenancy.oc1..<unique-id>",
-  "oci_compartment_id": "ocid1.compartment.oc1..<unique-id>",
-  "ocir_username":      "<namespace>/<service_user>-ocir",
-  "ocir_password":      "<auth-token>",
-  "ocir_url":           "ocir.<region>.oci.oraclecloud.com/<namespace>"
+  "oci_compartment_id": "ocid1.compartment.oc1..<unique-id>"
 }
 ```
 
@@ -87,11 +84,10 @@ Pass the unified secret to the action via the `config_json` input:
   with:
     config_json: ${{ secrets.OCI_OIDC_CONFIG }}
 
-# ~/.docker/config.json is written automatically when ocir_* keys are present.
+# ~/.docker/config.json is written automatically (ocir_login: true by default).
 # docker / podman / kaniko can push without a separate login step.
 ```
 
-> `ocir_registry` is derived automatically from `ocir_url` and does not need to be set.
 
 ### Minimal
 
@@ -186,7 +182,7 @@ jobs:
 
 ### With OCIR (Docker / Podman / Kaniko)
 
-When `config_json` contains `ocir_*` keys (the default when using the `terraform-oci-oidc-federation` module), the action automatically exports `OCIR_USERNAME`, `OCIR_PASSWORD`, `OCIR_URL`, and `OCIR_REGISTRY` to `GITHUB_ENV` and writes `~/.docker/config.json` — no separate login step needed.
+With `ocir_login: true` (the default) the action derives the registry host from `oci_region`, reads the tenancy namespace, gets a short-lived Docker bearer token through the UPST, exports `OCIR_REGISTRY`, `OCIR_URL`, `DOCKER_CONFIG` and `REGISTRY_AUTH_FILE` to `GITHUB_ENV` and writes `~/.docker/config.json`. No separate login step, long-lived OCIR auth token or `ocir_*` field is needed; the identity behind `config_json` must hold the OCIR repository permissions.
 
 **Docker / Podman**
 
@@ -195,8 +191,7 @@ When `config_json` contains `ocir_*` keys (the default when using the `terraform
   uses: devopshouse/oci-oidc-auth-config@v2
   with:
     config_json: ${{ secrets.OCI_OIDC_CONFIG }}
-    # ocir_login: true (default) — writes ~/.docker/config.json automatically
-    # when ocir_* keys are present in the blob.
+    # ocir_login: true (default) — writes ~/.docker/config.json automatically.
 
 # No docker login / podman login step needed.
 - name: Build and push
@@ -239,25 +234,25 @@ See the [`examples/github/`](examples/github/) folder for more ready-to-use work
 
 GitLab CI cannot execute GitHub Actions directly. Instead, use one of two scripts depending on the job:
 
-- `setup-gitlab.sh` for full OCI CLI auth in Ubuntu-based jobs
-- `setup-kaniko-auth.sh` for OCIR/Kaniko-only jobs
+- `setup-gitlab.sh` for OCI CLI auth and OCIR login (Ubuntu-based jobs and the `kaniko-oci` / `podman-oci` images)
+- `setup-kaniko-auth.sh` (legacy) only for JSON blobs that still carry `ocir_*` credentials, on images without Node.js; new setups use the `kaniko-oci` image with `setup-gitlab.sh`
 
 The recommended way to choose which remote revision to fetch is `OCI_OIDC_AUTH_VERSION`
 for tags like `v1` / `v2`, branches like `main`, or feature branches.
 
 ### Prerequisites
 
-1. Run the Terraform in [`examples/oci-oidc-configuration/`](examples/oci-oidc-configuration/) with `enable_gitlab=true` and `gitlab_projects` set to your project(s). This creates a second Identity Propagation Trust in OCI IDCS for GitLab.
+1. Run the Terraform in [`examples/oci-oidc-configuration/`](examples/oci-oidc-configuration/) with `"gitlab"` in `ci_platforms` and the project paths in `service_accounts[*].gitlab.projects`. This creates the Identity Propagation Trust in OCI IDCS for GitLab.
 
 2. Add a single masked CI/CD variable to your GitLab project or group (**Settings → CI/CD → Variables**):
 
    | Variable | Description |
    |----------|-------------|
-   | `OCI_OIDC_CONFIG_B64` | Base64-encoded output of `terraform output -raw ci_oidc_config_json \| base64 -w0`. Contains all OCI + OCIR fields in a single unified blob. |
+   | `OCI_OIDC_CONFIG_B64` | Base64-encoded output of `terraform output -raw ci_oidc_config_json \| base64 -w0`. Contains all OCI fields in a single JSON blob. |
 
-   `setup-gitlab.sh` reads `OCI_OIDC_CONFIG_B64` (or `OCI_OIDC_CONFIG` for plain JSON), extracts the OCIR fields automatically, and exports `OCIR_USERNAME`, `OCIR_PASSWORD`, `OCIR_URL`, and `OCIR_REGISTRY` to the generated env file.
+   `setup-gitlab.sh` reads `OCI_OIDC_CONFIG_B64` (or `OCI_OIDC_CONFIG` for plain JSON), logs in to OCIR with a short-lived bearer token, and exports `OCIR_REGISTRY`, `OCIR_URL`, `DOCKER_CONFIG` and `REGISTRY_AUTH_FILE` to the generated env file.
 
-   You can still fall back to the six individual `OCI_*` variables plus individual `OCIR_*` variables, but the unified blob avoids JSON escaping issues.
+   You can still fall back to the six individual `OCI_*` variables, but the unified blob avoids JSON escaping issues.
 
 ### Example `.gitlab-ci.yml`
 
@@ -281,11 +276,11 @@ oci-auth-test:
     - oci os ns get
 ```
 
-See [`examples/gitlab/.gitlab-ci.yml`](examples/gitlab/.gitlab-ci.yml) for the full annotated example. It keeps the two paths independent: one Ubuntu job uses `setup-gitlab.sh` to run `oci`, and one Kaniko job uses `setup-kaniko-auth.sh` to resolve OCIR credentials and write `/kaniko/.docker/config.json`. The example declares `OCI_AUTH_BASE_URL` from `OCI_OIDC_AUTH_VERSION` to keep the script calls short.
+See [`examples/gitlab/.gitlab-ci.yml`](examples/gitlab/.gitlab-ci.yml) for the full annotated example. It keeps three paths independent: one Ubuntu job uses `setup-gitlab.sh` to run `oci`, and one job each on the `kaniko-oci` and `podman-oci` images uses `setup-gitlab.sh` to log in to OCIR. The example declares `OCI_AUTH_BASE_URL` from `OCI_OIDC_AUTH_VERSION` to keep the script calls short.
 
 ### GitLab with OCIR credentials
 
-OCIR credentials are part of `OCI_OIDC_CONFIG_B64` — no separate variable needed. In Ubuntu jobs, `setup-gitlab.sh` resolves the OCIR fields and writes container auth automatically. In Kaniko jobs, `setup-kaniko-auth.sh` reads the same unified variable and writes `/kaniko/.docker/config.json` directly.
+No OCIR secret is needed: `setup-gitlab.sh` gets a short-lived bearer token through the UPST and writes container auth automatically (`~/.docker/config.json`, or `/kaniko/.docker/config.json` in the `kaniko-oci` image through `DOCKER_CONFIG`).
 
 ```yaml
 ocir-push:
@@ -296,7 +291,7 @@ ocir-push:
   variables:
     DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_CERTDIR: /certs
-    # Store OCI_OIDC_CONFIG_B64 as a masked variable (contains OCI + OCIR).
+    # Store OCI_OIDC_CONFIG_B64 as a masked variable (OCI fields only).
     # OCI_CLI_AUTH is set automatically by the setup script.
 
   id_tokens:
@@ -318,7 +313,7 @@ To skip writing the auth file (e.g. you only need the `OCIR_*` env vars), set `O
 
 `setup-gitlab.sh` writes shell exports to `OCI_AUTH_ENV_FILE` (default `$HOME/.oci-auth.env`) and then sources that file automatically when you use `source <(curl ...)`, so subsequent lines in the same Ubuntu job can use `oci` and registry auth immediately.
 
-`setup-kaniko-auth.sh` writes `/kaniko/.docker/config.json` and also writes the resolved `OCIR_*` values to `OCI_AUTH_ENV_FILE` (default `$HOME/.oci-auth.env`). When using the pipe form inside the Kaniko job, add `. "$HOME/.oci-auth.env"` after the helper so `OCIR_URL` is available for `/kaniko/executor`.
+`setup-kaniko-auth.sh` (legacy: it requires `ocir_*` keys in the blob) writes `/kaniko/.docker/config.json` and also writes the resolved `OCIR_*` values to `OCI_AUTH_ENV_FILE` (default `$HOME/.oci-auth.env`). When using the pipe form inside the Kaniko job, add `. "$HOME/.oci-auth.env"` after the helper so `OCIR_URL` is available for `/kaniko/executor`.
 
 If you still prefer `curl | bash` with `setup-gitlab.sh`, the variables do **not** propagate — add `. "$HOME/.oci-auth.env"` manually after the pipe.
 
@@ -338,7 +333,7 @@ You must supply OCI credentials using **one** of two approaches:
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `config_json` | ❌ | — | Unified JSON blob with all OCI + OCIR parameters (the `OCI_OIDC_CONFIG` secret). When provided, all individual OCI and OCIR inputs are ignored. |
+| `config_json` | ❌ | — | JSON blob with the OCI parameters (the `OCI_OIDC_CONFIG` secret); `ocir_*` keys are ignored. When provided, all individual OCI inputs are ignored. |
 | `oidc_audience` | ❌ | `https://cloud.oracle.com` | Audience claim requested in the GitHub OIDC token |
 | `oci_profile` | ❌ | `DEFAULT` | OCI config profile name written to `~/.oci/config` |
 
@@ -359,30 +354,13 @@ All six OCI inputs below are required when `config_json` is **not** provided.
 
 > **Note** — At least one complete set of OCI credentials must be provided. If both `config_json` and individual OCI inputs are supplied, `config_json` takes precedence.
 
-### OCIR inputs (optional)
-
-When provided, the action exports `OCIR_USERNAME`, `OCIR_PASSWORD`, `OCIR_URL`, and `OCIR_REGISTRY` to `GITHUB_ENV` for subsequent steps, and writes container auth to `~/.docker/config.json` (readable by docker, podman, and kaniko). `OCIR_PASSWORD` is masked in the log.
-
-**Option A — unified JSON secret (via `config_json`)**
-
-OCIR fields (`ocir_username`, `ocir_password`, `ocir_url`) are read automatically from the unified `config_json` blob. `ocir_registry` is derived from `ocir_url`. No separate OCIR input needed when using the unified secret.
-
-**Option B — individual inputs**
+### OCIR login
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `ocir_username` | — | OCIR login username in the form `<namespace>/<username>` |
-| `ocir_password` | — | OCIR auth token (password) |
-| `ocir_url` | — | Registry URL with namespace, e.g. `ocir.<region>.oci.oraclecloud.com/<namespace>` |
-| `ocir_registry` | — | Registry host, e.g. `ocir.<region>.oci.oraclecloud.com` |
+| `ocir_login` | `true` | Log in to OCIR with a short-lived bearer token derived from the UPST: exports `OCIR_REGISTRY`, `OCIR_URL`, `DOCKER_CONFIG` and `REGISTRY_AUTH_FILE` to `GITHUB_ENV` and writes `~/.docker/config.json` (readable by docker, podman and kaniko). Set to `false` to skip. |
 
-**Container auth**
-
-| Input | Default | Description |
-|-------|---------|-------------|
-| `ocir_login` | `true` | Write `~/.docker/config.json` automatically so subsequent steps can run `docker`/`podman`/kaniko without a separate login step. Set to `false` to skip. |
-
-> When none of the OCIR inputs are set, OCIR export is silently skipped. When some but not all individual inputs are set, the action fails with a descriptive error.
+There are no `ocir_username`, `ocir_password` or `ocir_url` inputs, and `ocir_*` keys in `config_json` are ignored.
 
 ---
 
@@ -394,6 +372,8 @@ OCIR fields (`ocir_username`, `ocir_password`, `ocir_url`) are read automaticall
 | `oci_tenancy_id` | Tenancy OCID |
 | `oci_compartment_id` | Compartment OCID |
 | `oci_idcs_endpoint` | IDCS identity domain URL |
+| `ocir_registry` | OCIR registry host, e.g. `gru.ocir.io` (only when `ocir_login` is true) |
+| `ocir_url` | OCIR registry host with the tenancy namespace, e.g. `gru.ocir.io/<namespace>` (only when `ocir_login` is true) |
 
 ---
 
@@ -415,7 +395,7 @@ This action follows [Semantic Versioning](https://semver.org/).
 
 ## Security
 
-- All sensitive values (`client_id`, `client_secret`, UPST token, `OCIR_PASSWORD`) are immediately masked in the log via `::add-mask::` (GitHub Actions) or should be marked Masked in GitLab CI variables.
+- All sensitive values (`client_id`, `client_secret`, UPST token, OCIR bearer token) are immediately masked in the log via `::add-mask::` (GitHub Actions) or should be marked Masked in GitLab CI variables.
 - The ephemeral RSA key pair generated for the UPST exchange is discarded after writing to `~/.oci/` and never leaves the runner.
 - No credentials are committed to source control.
 - OCI credentials are written only to runner-local files under `~/.oci/`.
@@ -426,7 +406,7 @@ This action follows [Semantic Versioning](https://semver.org/).
 
 The [`examples/`](examples/) folder contains:
 
-- [`oci-oidc-configuration/`](examples/oci-oidc-configuration/) — Terraform module to provision the OCI IDCS app, OIDC service user, OCIR auth-token user, IAM policy, and Identity Propagation Trusts for GitHub and/or GitLab
+- [`oci-oidc-configuration/`](examples/oci-oidc-configuration/) — Terraform example that calls the `terraform-oci-oidc-federation` module to provision the Identity Domain, service accounts with IAM policies, the OCI IDCS app and the Identity Propagation Trusts for GitHub and/or GitLab
 - [`gitlab/.gitlab-ci.yml`](examples/gitlab/.gitlab-ci.yml) — GitLab CI example using `scripts/setup-gitlab.sh`
 - [`github/basic-oci-cli.yml`](examples/github/basic-oci-cli.yml) — GitHub Actions OCI CLI example
 - [`github/terraform.yml`](examples/github/terraform.yml) — GitHub Actions Terraform example

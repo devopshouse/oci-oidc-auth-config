@@ -9,11 +9,11 @@
 #
 # Required env vars: CI_JOB_JWT_FILE, OCI_OIDC_TOKEN (GitLab id_tokens), or
 #   CI_JOB_JWT_V2 (legacy GitLab 15), plus either
-#   OCI_OIDC_CONFIG_B64  (base64-encoded unified JSON with all OCI + OCIR fields)
-#   OCI_OIDC_CONFIG      (plain unified JSON with all OCI + OCIR fields)
+#   OCI_OIDC_CONFIG_B64  (base64-encoded unified JSON with all OCI fields)
+#   OCI_OIDC_CONFIG      (plain unified JSON with all OCI fields)
 #   or individual: OCI_IDCS_ENDPOINT/OCI_CLIENT_ID/OCI_CLIENT_SECRET/OCI_REGION/OCI_TENANCY_ID/OCI_COMPARTMENT_ID
-# OCIR fields (ocir_username, ocir_password, ocir_url) are part of the unified JSON blob.
-# When present, container auth is written to $DOCKER_CONFIG/config.json
+# OCIR login uses a short-lived bearer token derived from the UPST; ocir_* keys in the blob are ignored.
+# Container auth is written to $DOCKER_CONFIG/config.json
 #   (docker/podman/kaniko compatible). Set OCIR_LOGIN=false to skip this step.
 # Set DOCKER_CONFIG to customise the auth file directory (default: ~/.docker).
 #   Kaniko example: DOCKER_CONFIG=/kaniko/.docker source <(curl -sSfL ...)
