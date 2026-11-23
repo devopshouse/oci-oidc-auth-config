@@ -5,12 +5,14 @@
 #   - a service user, an IAM group and a confidential application for the token exchange
 #   - Identity Propagation Trusts for GitHub Actions and/or GitLab CI
 #   - an IAM policy granting the group access to the compartment
-#   - the OCI_OIDC_CONFIG GitHub Actions secret in each repository of secret_repositories
+#   - the OCI_OIDC_CONFIG GitHub Actions secret in each repository of secret_repositories and, for
+#     github_organizations equal to github_owner, as an organization secret
 #
 # After applying, capture the JSON of the account:
 #   terraform output -raw ci_oidc_config_json
 #
-# GitHub: the module writes OCI_OIDC_CONFIG to each secret repository.
+# GitHub: the module writes OCI_OIDC_CONFIG to each secret repository and organization
+# (github_create_secrets = false publishes none).
 # GitLab: base64-encode the output and store it as the masked variable OCI_OIDC_CONFIG_B64:
 #   terraform output -raw ci_oidc_config_json | base64 -w0
 
@@ -31,7 +33,9 @@ module "oci_oidc_federation" {
   service_accounts = {
     ci = {
       github = {
+        organizations       = var.github_organizations
         repositories        = [for path in var.github_repositories : { path = path, refs = var.github_refs }]
+        create_secrets      = var.github_create_secrets
         secret_repositories = var.github_repositories
       }
       gitlab = {

@@ -22,7 +22,7 @@ This folder contains working examples that demonstrate how to use
 
 Use the [`oci-oidc-configuration/`](oci-oidc-configuration/) Terraform module to create the IDCS confidential application, service users, identity propagation trusts and IAM policies in your tenancy.
 
-After applying, the module writes the secret (`OCI_OIDC_CONFIG` by default) to each repository listed in `service_accounts[*].github.secret_repositories`. To retrieve the value manually:
+After applying, the module writes the secret (`OCI_OIDC_CONFIG` by default) to each repository listed in `service_accounts[*].github.secret_repositories` and, when `github.organizations` contains `github_owner`, as an organization secret (`github.create_secrets = false` publishes none). To retrieve the value manually:
 
 ```sh
 terraform output -raw ci_oidc_config_json

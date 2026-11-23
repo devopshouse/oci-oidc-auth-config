@@ -11,6 +11,8 @@ oci_compartment_id = "<YOUR_COMPARTMENT_OCID>"  # ocid1.compartment.oc1..aaa...
 github_owner        = "<YOUR_GITHUB_ORG>"       # e.g. my-org
 github_repositories = ["<YOUR_ORG>/<YOUR_REPO>"]
 # github_refs       = ["refs/heads/main"]       # ["*"] accepts any ref
+# github_organizations  = ["<YOUR_GITHUB_ORG>"]   # every repository; organization secret when equal to github_owner
+# github_create_secrets = true                   # false: trust only, no secret
 
 ci_platforms = ["github"]
 

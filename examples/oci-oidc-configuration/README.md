@@ -34,7 +34,7 @@ The action logs in to OCIR with a bearer token obtained through the same identit
 
 ## GitHub and GitLab Handling
 
-**GitHub Actions:** the module writes `OCI_OIDC_CONFIG` to each repository listed in `github_repositories`. Each repository must be authorized in the trust, which this example does with the same list.
+**GitHub Actions:** the module writes `OCI_OIDC_CONFIG` to each repository listed in `github_repositories`; each one must be authorized in the trust, which this example does with the same list. An organization in `github_organizations` equal to `github_owner` authorizes every repository and ref of the organization and receives the secret at organization level for private repositories; this needs the organization secrets write permission on the GitHub App or token. `github_create_secrets = false` keeps the trust and publishes no secret.
 
 **GitLab CI:** base64-encode the output and store it as a masked `OCI_OIDC_CONFIG_B64` CI/CD variable:
 

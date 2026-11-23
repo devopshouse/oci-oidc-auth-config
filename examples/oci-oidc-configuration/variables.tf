@@ -48,6 +48,18 @@ variable "github_repositories" {
   default     = []
 }
 
+variable "github_organizations" {
+  type        = list(string)
+  description = "Organizations whose every repository and ref may impersonate the identity; the one equal to github_owner also receives the secret at organization level (private repositories)."
+  default     = []
+}
+
+variable "github_create_secrets" {
+  type        = bool
+  description = "false keeps the trust and publishes no GitHub Actions secret (repository or organization)."
+  default     = true
+}
+
 variable "github_refs" {
   type        = list(string)
   description = "Full refs accepted for every repository; [\"*\"] accepts any ref."

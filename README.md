@@ -57,7 +57,7 @@ Use the Terraform in [`examples/oci-oidc-configuration/`](examples/oci-oidc-conf
 
 #### 2. Create the `OCI_OIDC_CONFIG` secret
 
-The [`terraform-oci-oidc-federation`](https://github.com/devopshouse/terraform-oci-oidc-federation) module writes the secret to every repository listed in `service_accounts[*].github.secret_repositories` (secret name from `github.secret_name`, `OCI_OIDC_CONFIG` by default). To retrieve the default account's value manually:
+The [`terraform-oci-oidc-federation`](https://github.com/devopshouse/terraform-oci-oidc-federation) module writes the secret to every repository listed in `service_accounts[*].github.secret_repositories` and, when `github.organizations` contains `github_owner`, as an organization secret for every repository of the organization, current and future (secret name from `github.secret_name`, `OCI_OIDC_CONFIG` by default; `github.create_secrets = false` publishes none). To retrieve the default account's value manually:
 
 ```sh
 terraform output -raw ci_oidc_config_json
