@@ -28,7 +28,11 @@ ENV UV_TOOL_DIR=/opt/uv/tools \
     UV_PYTHON_DOWNLOADS=never \
     UV_LINK_MODE=copy
 
-RUN apk add --no-cache \
+# The images only run node (the OCI auth CLI), so drop npm, npx, corepack and yarn, and take the
+# latest security fixes of the Alpine packages.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /opt/yarn-* \
+ && apk upgrade --no-cache \
+ && apk add --no-cache \
       ca-certificates \
       curl \
       bash \
