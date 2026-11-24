@@ -13,11 +13,11 @@
 #   fetches a short-lived Docker bearer token from the UPST, and writes
 #   ~/.docker/config.json (or /kaniko/.docker/config.json for kaniko-oci) automatically.
 #
-# kaniko-oci image (ghcr.io/devopshouse/oci-oidc-auth-config/kaniko-oci:v3):
+# kaniko-oci image (ghcr.io/devopshouse/kaniko-oci:latest, deprecated with Kaniko):
 #   Alpine + Node 24 + OCI CLI + curl + /kaniko/executor binary.
 #   Works on any K8s runner (no privileged mode, no hostUsers required).
 #
-# podman-oci image (ghcr.io/devopshouse/oci-oidc-auth-config/podman-oci:v3):
+# podman-oci image (ghcr.io/devopshouse/podman-oci:latest):
 #   Alpine + Node 24 + OCI CLI + Podman. Commands are identical to GitHub Actions
 #   (docker build / docker push). Requires runner with hostUsers: false pod_spec
 #   and K8s nodes with kernel ≥ 5.12 (OKE OL8 UEK7 / OL9 UEK7+).

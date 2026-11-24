@@ -300,7 +300,7 @@ See the [`examples/github/`](examples/github/) folder for more ready-to-use work
 
 GitLab CI cannot execute GitHub Actions directly. Instead, use one of two scripts depending on the job:
 
-- `setup-gitlab.sh` for OCI CLI auth and OCIR login (Ubuntu-based jobs and the `kaniko-oci` / `podman-oci` images)
+- `setup-gitlab.sh` for OCI CLI auth and OCIR login (Ubuntu-based jobs and the `podman-oci` image; `kaniko-oci` is deprecated with Kaniko)
 - `setup-kaniko-auth.sh` (legacy) only for JSON blobs that still carry `ocir_*` credentials, on images without Node.js; new setups use the `kaniko-oci` image with `setup-gitlab.sh`
 
 The recommended way to choose which remote revision to fetch is `OCI_OIDC_AUTH_VERSION`
@@ -346,32 +346,26 @@ See [`examples/gitlab/.gitlab-ci.yml`](examples/gitlab/.gitlab-ci.yml) for the f
 
 ### GitLab with OCIR credentials
 
-No OCIR secret is needed: `setup-gitlab.sh` gets a short-lived bearer token through the UPST and writes container auth automatically (`~/.docker/config.json`, or `/kaniko/.docker/config.json` in the `kaniko-oci` image through `DOCKER_CONFIG`).
+No OCIR secret is needed: `setup-gitlab.sh` gets a short-lived bearer token through the UPST and writes container auth automatically (`~/.docker/config.json`, or `/kaniko/.docker/config.json` in the `kaniko-oci` image through `DOCKER_CONFIG`). The `podman-oci` image builds and pushes without a Docker daemon, so the job needs no `docker:dind` service and no `DOCKER_*` variables:
 
 ```yaml
 ocir-push:
-  image: ubuntu:24.04
-  services:
-    - docker:dind
-
-  variables:
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_TLS_CERTDIR: /certs
-    # Store OCI_OIDC_CONFIG_B64 as a masked variable (OCI fields only).
-    # OCI_CLI_AUTH is set automatically by the setup script.
+  image:
+    name: ghcr.io/devopshouse/podman-oci:latest
+    entrypoint: [""]
 
   id_tokens:
     OCI_OIDC_TOKEN:
       aud: https://cloud.oracle.com
 
   script:
-    - apt-get update -qq && apt-get install -y -qq ca-certificates curl
-    # Resolves OCI + OCIR, writes ~/.docker/config.json, exports vars.
+    # Resolves OCI + OCIR, writes ~/.docker/config.json, exports OCIR_URL.
     - source <(curl -sSfL "https://raw.githubusercontent.com/devopshouse/oci-oidc-auth-config/${OCI_OIDC_AUTH_VERSION:-v2}/scripts/setup-gitlab.sh")
-    # docker / podman / kaniko can now push without a separate login step.
-    - docker build -t "$OCIR_URL/myimage:$CI_COMMIT_SHA" .
-    - docker push "$OCIR_URL/myimage:$CI_COMMIT_SHA"
+    - podman build -t "$OCIR_URL/myimage:$CI_COMMIT_SHA" .
+    - podman push "$OCIR_URL/myimage:$CI_COMMIT_SHA"
 ```
+
+Store `OCI_OIDC_CONFIG_B64` as a masked variable (OCI fields only); `OCI_CLI_AUTH` is set by the script. Set `aud` to the audience configured in the OCI trust (the `gitlab_oidc_audience` output of the module). The runner needs `hostUsers: false` in the pod spec and nodes with kernel 5.12 or newer for rootless Podman; see [`examples/gitlab/.gitlab-ci.yml`](examples/gitlab/.gitlab-ci.yml).
 
 To skip writing the auth file (e.g. you only need the `OCIR_*` env vars), set `OCIR_LOGIN=false`.
 
