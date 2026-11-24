@@ -5,9 +5,8 @@
 # Copy this file to .github/workflows/ in your repository.
 #
 # Prerequisites:
-#   - OCI_OIDC_CONFIG secret: unified JSON emitted by terraform-oci-oidc-federation
-#     (terraform output -raw ci_oidc_config_json)
-#     Contains the six required OCI connection fields.
+#   - OCI_OIDC_CONFIG secret: a JSON map with a "ci" service account (or a flat JSON,
+#     in which case remove service_account). Each account has the six required OCI fields.
 #     No OCIR secrets needed — the action derives the registry and obtains
 #     a short-lived bearer token automatically.
 #
@@ -44,9 +43,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup OCI OIDC Auth
-        uses: devopshouse/oci-oidc-auth-config@v3
+        uses: devopshouse/oci-oidc-auth-config@v2
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+          service_account: ci   # key in the OCI_OIDC_CONFIG map; omit it when the secret is a flat JSON
           # ocir_login: true (default) — derives registry from oci_region, fetches
           # bearer token via UPST, writes ~/.docker/config.json automatically.
 
@@ -70,9 +70,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup OCI OIDC Auth
-        uses: devopshouse/oci-oidc-auth-config@v3
+        uses: devopshouse/oci-oidc-auth-config@v2
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+          service_account: ci   # key in the OCI_OIDC_CONFIG map; omit it when the secret is a flat JSON
           # ocir_login: true (default) — writes REGISTRY_AUTH_FILE which podman honours.
 
       # No podman login step needed.
@@ -96,9 +97,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup OCI OIDC Auth
-        uses: devopshouse/oci-oidc-auth-config@v3
+        uses: devopshouse/oci-oidc-auth-config@v2
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+          service_account: ci   # key in the OCI_OIDC_CONFIG map; omit it when the secret is a flat JSON
           # ocir_login: true (default) — writes ~/.docker/config.json for Kaniko to use.
 
       - name: Build and push with Kaniko

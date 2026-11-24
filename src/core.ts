@@ -165,19 +165,40 @@ export function resolveOciConfig(input: {
   return resolved;
 }
 
+function selectServiceAccount(configJson: string, serviceAccount: string): OciConfig {
+  const accounts = parseJsonObject(configJson, 'config_json');
+  if (!Object.hasOwn(accounts, serviceAccount)) {
+    throw new Error(`No entry for service_account "${serviceAccount}" in config_json.`);
+  }
+
+  const label = 'selected service account';
+  return validateOciConfig(requireJsonObject(accounts[serviceAccount], label), label);
+}
+
 function parseConfigJson(rawJson: string, sourceLabel: string): OciConfig {
+  return validateOciConfig(parseJsonObject(rawJson, sourceLabel), sourceLabel);
+}
+
+function parseJsonObject(rawJson: string, sourceLabel: string): Record<string, unknown> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawJson);
-  } catch (error) {
-    throw new Error(`${sourceLabel} is not valid JSON: ${(error as Error).message}`);
+  } catch {
+    throw new Error(`${sourceLabel} is not valid JSON.`);
   }
 
+  return requireJsonObject(parsed, sourceLabel);
+}
+
+function requireJsonObject(parsed: unknown, sourceLabel: string): Record<string, unknown> {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`${sourceLabel} must be a JSON object.`);
   }
 
-  const record = parsed as Record<string, unknown>;
+  return parsed as Record<string, unknown>;
+}
+
+function validateOciConfig(record: Record<string, unknown>, sourceLabel: string): OciConfig {
   const resolved = {} as OciConfig;
   const missing: string[] = [];
 
@@ -207,10 +228,20 @@ function parseConfigJson(rawJson: string, sourceLabel: string): OciConfig {
  */
 export function resolveUnifiedConfig(input: {
   configJson?: string;
+  serviceAccount?: string;
   configJsonBase64?: string;
   env?: Env;
   ociValues?: Partial<OciConfig>;
 }): { oci: OciConfig } {
+  const serviceAccount = input.serviceAccount?.trim();
+  if (serviceAccount) {
+    const configJson = input.configJson?.trim();
+    if (!configJson) {
+      throw new Error('config_json is required when service_account is set.');
+    }
+    return { oci: selectServiceAccount(configJson, serviceAccount) };
+  }
+
   const configJsonBase64 = input.configJsonBase64?.trim();
   if (configJsonBase64) {
     const decoded = Buffer.from(configJsonBase64, 'base64').toString('utf8');
@@ -607,19 +638,6 @@ function commandExists(command: string): boolean {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-function parseJsonObject(text: string, description: string): Record<string, unknown> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`${description} is not valid JSON: ${(error as Error).message}`);
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${description} must be a JSON object.`);
-  }
-  return parsed as Record<string, unknown>;
 }
 
 async function safeResponseText(response: Response): Promise<string> {

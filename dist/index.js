@@ -122,18 +122,34 @@ function resolveOciConfig(input) {
     }
     return resolved;
 }
+function selectServiceAccount(configJson, serviceAccount) {
+    const accounts = parseJsonObject(configJson, 'config_json');
+    if (!Object.hasOwn(accounts, serviceAccount)) {
+        throw new Error(`No entry for service_account "${serviceAccount}" in config_json.`);
+    }
+    const label = 'selected service account';
+    return validateOciConfig(requireJsonObject(accounts[serviceAccount], label), label);
+}
 function parseConfigJson(rawJson, sourceLabel) {
+    return validateOciConfig(parseJsonObject(rawJson, sourceLabel), sourceLabel);
+}
+function parseJsonObject(rawJson, sourceLabel) {
     let parsed;
     try {
         parsed = JSON.parse(rawJson);
     }
-    catch (error) {
-        throw new Error(`${sourceLabel} is not valid JSON: ${error.message}`);
+    catch {
+        throw new Error(`${sourceLabel} is not valid JSON.`);
     }
+    return requireJsonObject(parsed, sourceLabel);
+}
+function requireJsonObject(parsed, sourceLabel) {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         throw new Error(`${sourceLabel} must be a JSON object.`);
     }
-    const record = parsed;
+    return parsed;
+}
+function validateOciConfig(record, sourceLabel) {
     const resolved = {};
     const missing = [];
     for (const key of CONFIG_KEYS) {
@@ -159,6 +175,14 @@ function parseConfigJson(rawJson, sourceLabel) {
  * performed via a short-lived bearer token derived from the UPST (see ocirBearerLogin).
  */
 function resolveUnifiedConfig(input) {
+    const serviceAccount = input.serviceAccount?.trim();
+    if (serviceAccount) {
+        const configJson = input.configJson?.trim();
+        if (!configJson) {
+            throw new Error('config_json is required when service_account is set.');
+        }
+        return { oci: selectServiceAccount(configJson, serviceAccount) };
+    }
     const configJsonBase64 = input.configJsonBase64?.trim();
     if (configJsonBase64) {
         const decoded = Buffer.from(configJsonBase64, 'base64').toString('utf8');
@@ -464,19 +488,6 @@ function commandExists(command) {
 function shellQuote(value) {
     return `'${value.replace(/'/g, "'\\''")}'`;
 }
-function parseJsonObject(text, description) {
-    let parsed;
-    try {
-        parsed = JSON.parse(text);
-    }
-    catch (error) {
-        throw new Error(`${description} is not valid JSON: ${error.message}`);
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error(`${description} must be a JSON object.`);
-    }
-    return parsed;
-}
 async function safeResponseText(response) {
     try {
         return await response.text();
@@ -510,6 +521,7 @@ const logger = {
 async function run() {
     const { oci: config } = resolveUnifiedConfig({
         configJson: getInput('config_json') || undefined,
+        serviceAccount: getInput('service_account') || undefined,
         ociValues: {
             oci_idcs_endpoint: getInput('oci_idcs_endpoint') || undefined,
             oci_client_id: getInput('oci_client_id') || undefined,

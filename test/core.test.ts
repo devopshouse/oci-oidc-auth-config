@@ -99,6 +99,35 @@ describe('resolveOciConfig', () => {
   });
 });
 
+describe('service account selection', () => {
+  const second = { ...fullConfig, oci_client_id: 'second-client', oci_client_secret: 'second-secret' };
+  const configJson = JSON.stringify({ ci: fullConfig, deploy: second });
+
+  it('selects the requested account from a map', () => {
+    expect(resolveUnifiedConfig({ configJson, serviceAccount: 'deploy' }).oci).toEqual(second);
+    expect(resolveUnifiedConfig({ configJson, serviceAccount: 'ci' }).oci).toEqual(fullConfig);
+  });
+
+  it('requires a selector for maps and rejects unknown or inherited keys', () => {
+    expect(() => resolveUnifiedConfig({ configJson })).toThrow('Missing required key');
+    expect(() => resolveUnifiedConfig({ configJson, serviceAccount: 'missing' })).toThrow('No entry');
+    expect(() => resolveUnifiedConfig({ configJson, serviceAccount: 'constructor' })).toThrow('No entry');
+  });
+
+  it('requires a map when a selector is supplied', () => {
+    const serviceAccount = 'ci';
+    expect(() => resolveUnifiedConfig({ serviceAccount, ociValues: fullConfig })).toThrow('config_json is required');
+    expect(() => resolveUnifiedConfig({ serviceAccount, configJson: JSON.stringify(fullConfig) })).toThrow('No entry');
+    expect(() => resolveUnifiedConfig({ serviceAccount, configJson: '{"ci":[]}' })).toThrow('must be a JSON object');
+    expect(() => resolveUnifiedConfig({ serviceAccount, configJson: '{"ci":{}}' })).toThrow('oci_client_secret');
+  });
+
+  it('reports malformed JSON without including payload contents', () => {
+    expect(() => resolveUnifiedConfig({ configJson: 'secret-content', serviceAccount: 'ci' }))
+      .toThrow(/^config_json is not valid JSON\.$/);
+  });
+});
+
 describe('resolveUnifiedConfig', () => {
   it('parses a unified blob (ocir_* keys ignored)', () => {
     const blob = { ...fullConfig, ocir_username: 'ignored', ocir_password: 'ignored', ocir_url: 'ignored' };
@@ -110,6 +139,10 @@ describe('resolveUnifiedConfig', () => {
     const configJsonBase64 = Buffer.from(JSON.stringify(fullConfig)).toString('base64');
     const { oci } = resolveUnifiedConfig({ configJsonBase64, env: {} });
     expect(oci).toEqual(fullConfig);
+  });
+
+  it('accepts individual inputs when given no JSON or selector', () => {
+    expect(resolveUnifiedConfig({ ociValues: fullConfig, env: {} }).oci).toEqual(fullConfig);
   });
 
   it('falls back to individual env vars when no JSON blob is provided', () => {

@@ -21,6 +21,7 @@ jobs:
         uses: devopshouse/oci-oidc-auth-config@v2
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+          service_account: ci   # key in the OCI_OIDC_CONFIG map; omit it when the secret is a flat JSON
 
       # After this step the OCI CLI is installed, configured, and authenticated.
       # OCI_CLI_AUTH=security_token is set in the environment automatically.

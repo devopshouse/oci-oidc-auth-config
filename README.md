@@ -29,7 +29,7 @@ After the auth step completes, every subsequent step in the job can use the **OC
 
 | Platform | How to use | Version |
 |----------|-----------|---------|
-| **GitHub Actions** | `uses: devopshouse/oci-oidc-auth-config@v2` - Node 24 action | `@v2` |
+| **GitHub Actions** | `uses: devopshouse/oci-oidc-auth-config@v2` - Node 24 action | `v2` |
 | **GitLab CI** | Run `scripts/setup-gitlab.sh`, which calls the shared Node CLI | `v2` |
 
 > GitLab CI cannot run GitHub Actions natively. It calls the shared CLI through `scripts/setup-gitlab.sh` instead.
@@ -57,37 +57,77 @@ Use the Terraform in [`examples/oci-oidc-configuration/`](examples/oci-oidc-conf
 
 #### 2. Create the `OCI_OIDC_CONFIG` secret
 
-The [`terraform-oci-oidc-federation`](https://github.com/devopshouse/terraform-oci-oidc-federation) module writes the secret to every repository listed in `service_accounts[*].github.secret_repositories` (secret name from `github.secret_name`, `OCI_OIDC_CONFIG` by default). To retrieve the default account's value manually:
+The secret holds the OCI configuration of the service accounts the workflow may use. It comes in two formats, and `config_json` accepts either:
 
-```sh
-terraform output -raw ci_oidc_config_json
-```
+| Format | Secret value | Workflow |
+|--------|--------------|----------|
+| **Flat** | The six OCI fields of one account | `config_json` only |
+| **Map** | An object keyed by service account name, each value holding the six OCI fields | `config_json` and `service_account` with the exact key |
 
-The secret is a single JSON blob with the OCI connection fields. OCIR login needs no stored credential: the action derives it from the short-lived UPST (see [With OCIR](#with-ocir-docker--podman--kaniko)). Extra keys, such as the legacy `ocir_*` fields, are ignored:
+**Flat** (one account per secret):
 
 ```json
 {
-  "oci_idcs_endpoint":  "https://<domain>.identity.oraclecloud.com",
-  "oci_client_id":      "<confidential-app-client-id>",
-  "oci_client_secret":  "<confidential-app-client-secret>",
-  "oci_region":         "sa-saopaulo-1",
-  "oci_tenancy_id":     "ocid1.tenancy.oc1..<unique-id>",
+  "oci_idcs_endpoint": "https://<domain>.identity.oraclecloud.com",
+  "oci_client_id": "<confidential-app-client-id>",
+  "oci_client_secret": "<confidential-app-client-secret>",
+  "oci_region": "sa-saopaulo-1",
+  "oci_tenancy_id": "ocid1.tenancy.oc1..<unique-id>",
   "oci_compartment_id": "ocid1.compartment.oc1..<unique-id>"
 }
 ```
 
-Pass the unified secret to the action via the `config_json` input:
+**Map** (several accounts in one secret; this one has `ci` and `deploy`):
+
+```json
+{
+  "ci": {
+    "oci_idcs_endpoint": "https://<domain>.identity.oraclecloud.com",
+    "oci_client_id": "<ci-client-id>",
+    "oci_client_secret": "<ci-client-secret>",
+    "oci_region": "sa-saopaulo-1",
+    "oci_tenancy_id": "ocid1.tenancy.oc1..<unique-id>",
+    "oci_compartment_id": "ocid1.compartment.oc1..<unique-id>"
+  },
+  "deploy": {
+    "oci_idcs_endpoint": "https://<domain>.identity.oraclecloud.com",
+    "oci_client_id": "<deploy-client-id>",
+    "oci_client_secret": "<deploy-client-secret>",
+    "oci_region": "sa-saopaulo-1",
+    "oci_tenancy_id": "ocid1.tenancy.oc1..<unique-id>",
+    "oci_compartment_id": "ocid1.compartment.oc1..<other-compartment-id>"
+  }
+}
+```
+
+Create a GitHub Actions secret named `OCI_OIDC_CONFIG` and paste the JSON object as its value. With a map, select the account in the workflow:
 
 ```yaml
 - name: Setup OCI OIDC Auth
   uses: devopshouse/oci-oidc-auth-config@v2
   with:
     config_json: ${{ secrets.OCI_OIDC_CONFIG }}
-
-# ~/.docker/config.json is written automatically (ocir_login: true by default).
-# docker / podman / kaniko can push without a separate login step.
+    service_account: deploy
 ```
 
+How the choice is resolved:
+
+- With `service_account`, the action picks that exact key from the map and fails before requesting a token when the secret is not a map, the key is missing or the entry lacks one of the six fields.
+- Without `service_account`, `config_json` must be flat. A map without a selector fails the field validation.
+- Without `config_json`, the action reads the six individual `oci_*` inputs.
+- A flat `config_json` takes precedence over individual inputs.
+
+The secret picks the OCI client credentials; it does not pick the identity. OCI maps the GitHub token of the running workflow (repository, ref or reusable workflow) to a service user through the trust rules of the federation, so a workflow that selects an account its token is not mapped to is rejected with `No rules matched`. Even so, every workflow that can read a map secret reads all the accounts in it: publish each account only to the repositories its trust authorizes.
+
+The [`terraform-oci-oidc-federation`](https://github.com/devopshouse/terraform-oci-oidc-federation) module publishes the secret for you. `secret_format = "flat"` (the default) writes one secret per account, and `secret_format = "map"` writes one `OCI_OIDC_CONFIG` per repository or organization with every account that targets it. To publish by hand, wrap a flat output under its account name:
+
+```sh
+terraform output -raw ci_oidc_config_json |
+  jq -c '{ci: .}' |
+  gh secret set OCI_OIDC_CONFIG --repo OWNER/REPO
+```
+
+For an organization secret, use `gh secret set OCI_OIDC_CONFIG --org OWNER --repos REPO1,REPO2`. A repository secret takes precedence over an organization secret with the same name, so a repository secret must carry every account its workflows use. When you change a secret from flat to map, change the workflows that read it in the same step, because a flat reader cannot parse a map.
 
 ### Minimal
 
@@ -101,9 +141,26 @@ steps:
     uses: devopshouse/oci-oidc-auth-config@v2
     with:
       config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+      service_account: ci
 
   - name: List compute instances
     run: oci compute instance list
+```
+
+### Using a flat JSON secret
+
+Publish the single-account output directly and omit `service_account`:
+
+```sh
+terraform output -raw ci_oidc_config_json |
+  gh secret set OCI_OIDC_CONFIG --repo OWNER/REPO
+```
+
+```yaml
+- name: Setup OCI OIDC Auth
+  uses: devopshouse/oci-oidc-auth-config@v2
+  with:
+    config_json: ${{ secrets.OCI_OIDC_CONFIG }}
 ```
 
 ### Using individual inputs instead of a JSON secret
@@ -137,6 +194,7 @@ steps:
     uses: devopshouse/oci-oidc-auth-config@v2
     with:
       config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+      service_account: ci
 
   - name: Terraform plan
     run: |
@@ -169,6 +227,7 @@ jobs:
         uses: devopshouse/oci-oidc-auth-config@v2
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+          service_account: ci
 
       - uses: hashicorp/setup-terraform@v3
 
@@ -191,6 +250,7 @@ With `ocir_login: true` (the default) the action derives the registry host from 
   uses: devopshouse/oci-oidc-auth-config@v2
   with:
     config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+    service_account: ci
     # ocir_login: true (default) — writes ~/.docker/config.json automatically.
 
 # No docker login / podman login step needed.
@@ -209,6 +269,7 @@ On Kubernetes-based runners without privileged container builds, Podman `build` 
   uses: devopshouse/oci-oidc-auth-config@v2
   with:
     config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+    service_account: ci
     # ocir_login: true (default) — writes ~/.docker/config.json automatically.
 
 # Bind-mount ~/.docker into Kaniko — no separate auth config step needed.
@@ -238,7 +299,7 @@ GitLab CI cannot execute GitHub Actions directly. Instead, use one of two script
 - `setup-kaniko-auth.sh` (legacy) only for JSON blobs that still carry `ocir_*` credentials, on images without Node.js; new setups use the `kaniko-oci` image with `setup-gitlab.sh`
 
 The recommended way to choose which remote revision to fetch is `OCI_OIDC_AUTH_VERSION`
-for tags like `v1` / `v2`, branches like `main`, or feature branches.
+with a tag such as `v1` or `v2`.
 
 ### Prerequisites
 
@@ -252,7 +313,7 @@ for tags like `v1` / `v2`, branches like `main`, or feature branches.
 
    `setup-gitlab.sh` reads `OCI_OIDC_CONFIG_B64` (or `OCI_OIDC_CONFIG` for plain JSON), logs in to OCIR with a short-lived bearer token, and exports `OCIR_REGISTRY`, `OCIR_URL`, `DOCKER_CONFIG` and `REGISTRY_AUTH_FILE` to the generated env file.
 
-   You can still fall back to the six individual `OCI_*` variables, but the unified blob avoids JSON escaping issues.
+   The GitLab scripts read a flat JSON only. The map format and `service_account` are specific to the GitHub Action. You can still fall back to the six individual `OCI_*` variables, but the unified blob avoids JSON escaping issues.
 
 ### Example `.gitlab-ci.yml`
 
@@ -327,32 +388,14 @@ Default: `OCI_OIDC_AUTH_VERSION=v2`
 
 ## Action inputs (GitHub Actions)
 
-You must supply OCI credentials using **one** of two approaches:
-
-### Option A — single JSON secret (recommended for simplicity)
-
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `config_json` | ❌ | — | JSON blob with the OCI parameters (the `OCI_OIDC_CONFIG` secret); `ocir_*` keys are ignored. When provided, all individual OCI inputs are ignored. |
-| `oidc_audience` | ❌ | `https://cloud.oracle.com` | Audience claim requested in the GitHub OIDC token |
-| `oci_profile` | ❌ | `DEFAULT` | OCI config profile name written to `~/.oci/config` |
+| `config_json` | No | — | The `OCI_OIDC_CONFIG` secret: flat OCI configuration or a map keyed by service account name. Takes precedence over individual inputs. |
+| `service_account` | For maps | — | Exact key to select from a map. Omit for flat JSON or individual inputs. |
+| `oidc_audience` | No | `https://cloud.oracle.com` | Audience claim requested in the GitHub OIDC token. |
+| `oci_profile` | No | `DEFAULT` | OCI config profile name written to `~/.oci/config`. |
 
-### Option B — individual inputs
-
-All six OCI inputs below are required when `config_json` is **not** provided.
-
-| Input | Default | Description |
-|-------|---------|-------------|
-| `oci_idcs_endpoint` | — | IDCS identity domain URL |
-| `oci_client_id` | — | OAuth2 confidential application client ID |
-| `oci_client_secret` | — | OAuth2 confidential application client secret |
-| `oci_region` | — | OCI region identifier (e.g. `sa-saopaulo-1`) |
-| `oci_tenancy_id` | — | Tenancy OCID |
-| `oci_compartment_id` | — | Compartment OCID |
-| `oidc_audience` | `https://cloud.oracle.com` | Audience claim requested in the GitHub OIDC token |
-| `oci_profile` | `DEFAULT` | OCI config profile name written to `~/.oci/config` |
-
-> **Note** — At least one complete set of OCI credentials must be provided. If both `config_json` and individual OCI inputs are supplied, `config_json` takes precedence.
+Provide all six OCI fields shown in the individual-input example when `config_json` is omitted.
 
 ### OCIR login
 
@@ -385,9 +428,8 @@ This action follows [Semantic Versioning](https://semver.org/).
 
 | Reference | Meaning |
 |-----------|---------|
-| `@v2` | Latest patch/minor in the v2 major line *(recommended)* |
+| `@v2` | Latest patch/minor in the v2 major line |
 | `@v2.0.0` | Exact version pin |
-| `@main` | Tip of the default branch — may include breaking changes |
 
 > **v1 users** — `@v1` continues to work. Migrate to `@v2` to get GitLab CI support and the shared TypeScript implementation.
 
