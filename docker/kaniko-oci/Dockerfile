@@ -4,8 +4,7 @@
 #   Stage 1: pull only the Kaniko executor binary from the official image.
 #   Stage 2: node:24-alpine runtime with OCI CLI, curl, and the Kaniko executor.
 #
-# The OCI CLI (Python) needs to compile the cryptography wheel on musl — build
-# dependencies are installed then removed to keep the final layer lean.
+# The OCI CLI is installed with uv from prebuilt wheels, so no compiler is needed.
 #
 # Usage in GitLab CI:
 #   image:
@@ -21,24 +20,20 @@ FROM gcr.io/kaniko-project/executor:v1.24.0 AS kaniko
 # ── Stage 2: Runtime ─────────────────────────────────────────────────────────
 FROM node:24-alpine
 
-# Build deps needed to compile the Python cryptography wheel on musl.
-# They are installed in a virtual group and removed after pip install.
+COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /usr/local/bin/uv
+
+# uv installs the OCI CLI in its own virtualenv and links the oci executable into /usr/local/bin.
+ENV UV_TOOL_DIR=/opt/uv/tools \
+    UV_TOOL_BIN_DIR=/usr/local/bin \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_LINK_MODE=copy
+
 RUN apk add --no-cache \
       ca-certificates \
       curl \
       bash \
       python3 \
-      py3-pip \
- && apk add --no-cache --virtual .build-deps \
-      cargo \
-      gcc \
-      musl-dev \
-      libffi-dev \
-      openssl-dev \
-      python3-dev \
-      make \
- && pip install --no-cache-dir --break-system-packages oci-cli \
- && apk del .build-deps
+ && uv tool install oci-cli
 
 # Copy only the Kaniko executor binary from Stage 1.
 COPY --from=kaniko /kaniko/executor /kaniko/executor

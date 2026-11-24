@@ -24,6 +24,14 @@
 
 FROM node:24-alpine
 
+COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /usr/local/bin/uv
+
+# uv installs the OCI CLI in its own virtualenv and links the oci executable into /usr/local/bin.
+ENV UV_TOOL_DIR=/opt/uv/tools \
+    UV_TOOL_BIN_DIR=/usr/local/bin \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_LINK_MODE=copy
+
 RUN apk add --no-cache \
       ca-certificates \
       curl \
@@ -32,18 +40,8 @@ RUN apk add --no-cache \
       helm \
       kubectl \
       python3 \
-      py3-pip \
       podman \
- && apk add --no-cache --virtual .build-deps \
-      cargo \
-      gcc \
-      musl-dev \
-      libffi-dev \
-      openssl-dev \
-      python3-dev \
-      make \
- && pip install --no-cache-dir --break-system-packages oci-cli \
- && apk del .build-deps \
+ && uv tool install oci-cli \
  && printf '#!/bin/sh\ncmd="$1"; shift\ncase "$cmd" in\n  build) exec /usr/bin/podman build --isolation=chroot "$@" ;;\n  *)     exec /usr/bin/podman "$cmd" "$@" ;;\nesac\n' > /usr/local/bin/podman \
  && cp /usr/local/bin/podman /usr/local/bin/docker \
  && chmod +x /usr/local/bin/podman /usr/local/bin/docker
