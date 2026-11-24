@@ -64,15 +64,15 @@ inputs:
     default: DEFAULT
   ocir_login:
     description: >
-      Perform OCIR login automatically after OCI auth is set up.
+      Set to 'true' to log in to OCIR after OCI auth is set up.
       The action derives the registry host from oci_region, fetches the tenancy
       namespace, and obtains a short-lived Docker bearer token via the UPST —
       no long-lived auth token or OCIR secret required.
       Writes OCIR_REGISTRY, OCIR_URL, DOCKER_CONFIG, REGISTRY_AUTH_FILE to
-      GITHUB_ENV and ~/.docker/config.json so docker/podman/kaniko work without
-      an extra login step. Set to 'false' to skip. Default: 'true'.
+      GITHUB_ENV and ~/.docker/config.json so docker, podman and buildx work
+      without an extra login step. Default: 'false'.
     required: false
-    default: 'true'
+    default: 'false'
 
 outputs:
   oci_region:

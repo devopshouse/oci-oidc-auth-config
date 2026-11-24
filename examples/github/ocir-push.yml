@@ -1,7 +1,7 @@
 # Example: Build and push a container image to OCIR using GitHub OIDC authentication.
-# Shows Docker, Podman, and Kaniko — uncomment the job that matches your needs.
+# Shows Docker, Podman and a BuildKit sidecar — keep the job that matches your runner.
 # Note: Kubernetes-based runners without privileged container builds may not
-# support Podman build reliably. Prefer Kaniko there.
+# support Podman build reliably. Use the BuildKit sidecar there (Kaniko is deprecated).
 # Copy this file to .github/workflows/ in your repository.
 #
 # Prerequisites:
@@ -10,12 +10,11 @@
 #     No OCIR secrets needed — the action derives the registry and obtains
 #     a short-lived bearer token automatically.
 #
-# The action exports OCIR_REGISTRY, OCIR_URL, DOCKER_CONFIG, REGISTRY_AUTH_FILE to
-# GITHUB_ENV and writes ~/.docker/config.json automatically (ocir_login: true by
-# default) — no separate docker login step needed.
+# With ocir_login: "true" (off by default) the action exports OCIR_REGISTRY, OCIR_URL,
+# DOCKER_CONFIG, REGISTRY_AUTH_FILE to GITHUB_ENV and writes ~/.docker/config.json —
+# no separate docker login step needed.
 #
 # Docker and Podman are pre-installed on ubuntu-latest runners.
-# Kaniko runs via `docker run` so no separate install is needed.
 
 name: OCIR — Build and Push
 
@@ -47,8 +46,8 @@ jobs:
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
           service_account: ci   # key in the OCI_OIDC_CONFIG map; omit it when the secret is a flat JSON
-          # ocir_login: true (default) — derives registry from oci_region, fetches
-          # bearer token via UPST, writes ~/.docker/config.json automatically.
+          ocir_login: "true"   # derives registry from oci_region, fetches a bearer token via UPST
+                               # and writes ~/.docker/config.json
 
       # OCIR_REGISTRY / OCIR_URL are now in GITHUB_ENV.
       # ~/.docker/config.json is already written — no docker login step needed.
@@ -74,7 +73,7 @@ jobs:
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
           service_account: ci   # key in the OCI_OIDC_CONFIG map; omit it when the secret is a flat JSON
-          # ocir_login: true (default) — writes REGISTRY_AUTH_FILE which podman honours.
+          ocir_login: "true"   # writes REGISTRY_AUTH_FILE, which podman honours
 
       # No podman login step needed.
 
@@ -85,12 +84,14 @@ jobs:
           podman tag  "$OCIR_URL/$IMAGE_NAME:$GITHUB_SHA" "$OCIR_URL/$IMAGE_NAME:latest"
           podman push "$OCIR_URL/$IMAGE_NAME:latest"
 
-  # ── Option C: Kaniko (rootless, no Docker daemon in the build step) ───────────
-  # Kaniko runs via `docker run` so no additional install is needed.
-  # The action writes ~/.docker/config.json which is bind-mounted into Kaniko below.
-  build-push-kaniko:
-    name: Kaniko build & push
-    runs-on: ubuntu-latest   # Docker (to run the Kaniko image) is pre-installed
+  # ── Option C: BuildKit sidecar (rootless, no Docker daemon in the build step) ─
+  # For Kubernetes runners whose pod runs `buildkitd` next to the runner container,
+  # listening on the pod loopback (no TLS: never expose it outside the pod). If the runner
+  # already creates the remote builder at start, drop the "Use the BuildKit sidecar" step.
+  # The cache repository $IMAGE_NAME/cache must exist in OCIR.
+  build-push-buildkit:
+    name: BuildKit build & push
+    runs-on: [self-hosted, buildkit]   # Adjust to your runner labels
 
     steps:
       - name: Checkout
@@ -101,15 +102,16 @@ jobs:
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
           service_account: ci   # key in the OCI_OIDC_CONFIG map; omit it when the secret is a flat JSON
-          # ocir_login: true (default) — writes ~/.docker/config.json for Kaniko to use.
+          ocir_login: "true"    # the buildx client sends the credentials in ~/.docker/config.json
 
-      - name: Build and push with Kaniko
-        run: |
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE:/workspace" \
-            -v "$HOME/.docker:/kaniko/.docker:ro" \
-            gcr.io/kaniko-project/executor:latest \
-              --context /workspace \
-              --dockerfile /workspace/Dockerfile \
-              --destination "$OCIR_URL/$IMAGE_NAME:$GITHUB_SHA" \
-              --destination "$OCIR_URL/$IMAGE_NAME:latest"
+      - name: Use the BuildKit sidecar
+        run: docker buildx create --name remote --driver remote --use tcp://127.0.0.1:1234
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ env.OCIR_URL }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.OCIR_URL }}/${{ env.IMAGE_NAME }}/cache:buildcache
+          cache-to: type=registry,ref=${{ env.OCIR_URL }}/${{ env.IMAGE_NAME }}/cache:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
