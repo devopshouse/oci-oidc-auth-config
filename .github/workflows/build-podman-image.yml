@@ -19,7 +19,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE: ghcr.io/devopshouse/oci-oidc-auth-config/podman-oci
+  IMAGE: ghcr.io/devopshouse/podman-oci
 
 jobs:
   build-push:
