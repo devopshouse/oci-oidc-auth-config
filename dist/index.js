@@ -554,7 +554,7 @@ async function run() {
     // OCI CLI must be on PATH before the bearer login step.
     installOciCli(logger);
     addPath(`${process.env.HOME}/.local/bin`);
-    if (getInput('ocir_login') !== 'false') {
+    if (getInput('ocir_login').toLowerCase() === 'true') {
         const ocir = ocirBearerLogin({ region: config.oci_region, profile, logger });
         writeGithubEnv({
             OCIR_REGISTRY: ocir.OCIR_REGISTRY,

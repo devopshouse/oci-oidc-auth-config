@@ -239,9 +239,9 @@ jobs:
             -var="compartment_id=${{ steps.oci.outputs.oci_compartment_id }}"
 ```
 
-### With OCIR (Docker / Podman / Kaniko)
+### With OCIR (Docker / Podman / BuildKit)
 
-With `ocir_login: true` (the default) the action derives the registry host from `oci_region`, reads the tenancy namespace, gets a short-lived Docker bearer token through the UPST, exports `OCIR_REGISTRY`, `OCIR_URL`, `DOCKER_CONFIG` and `REGISTRY_AUTH_FILE` to `GITHUB_ENV` and writes `~/.docker/config.json`. No separate login step, long-lived OCIR auth token or `ocir_*` field is needed; the identity behind `config_json` must hold the OCIR repository permissions.
+With `ocir_login: "true"` the action derives the registry host from `oci_region`, reads the tenancy namespace, gets a short-lived Docker bearer token through the UPST, exports `OCIR_REGISTRY`, `OCIR_URL`, `DOCKER_CONFIG` and `REGISTRY_AUTH_FILE` to `GITHUB_ENV` and writes `~/.docker/config.json`. No separate login step, long-lived OCIR auth token or `ocir_*` field is needed; the identity behind `config_json` must hold the OCIR repository permissions. The login is off by default: jobs that only call the OCI API do not need it and the identity does not need registry permissions.
 
 **Docker / Podman**
 
@@ -251,7 +251,7 @@ With `ocir_login: true` (the default) the action derives the registry host from 
   with:
     config_json: ${{ secrets.OCI_OIDC_CONFIG }}
     service_account: ci
-    # ocir_login: true (default) — writes ~/.docker/config.json automatically.
+    ocir_login: "true"   # writes ~/.docker/config.json automatically.
 
 # No docker login / podman login step needed.
 - name: Build and push
@@ -260,9 +260,11 @@ With `ocir_login: true` (the default) the action derives the registry host from 
     docker push "$OCIR_URL/myapp:$GITHUB_SHA"
 ```
 
-On Kubernetes-based runners without privileged container builds, Podman `build` can fail at runtime setup (`fuse-overlayfs` / `ping_group_range`). Prefer Kaniko there.
+`docker build` already uses BuildKit on GitHub-hosted runners. On Kubernetes-based runners without privileged container builds, Podman `build` can fail at runtime setup (`fuse-overlayfs` / `ping_group_range`); use a BuildKit sidecar there.
 
-**Kaniko** (rootless — no Docker daemon in the build step; runs via `docker run` on the ubuntu runner)
+**BuildKit sidecar** (rootless, no Docker daemon in the build step; the replacement for Kaniko, which is deprecated)
+
+Run `buildkitd` rootless next to the runner container in the same pod and point a `remote` buildx builder at its loopback address. The runner builds with `docker/build-push-action` and the registry credentials written by the action; BuildKit never sees a long-lived secret.
 
 ```yaml
 - name: Setup OCI OIDC Auth
@@ -270,22 +272,25 @@ On Kubernetes-based runners without privileged container builds, Podman `build` 
   with:
     config_json: ${{ secrets.OCI_OIDC_CONFIG }}
     service_account: ci
-    # ocir_login: true (default) — writes ~/.docker/config.json automatically.
+    ocir_login: "true"
 
-# Bind-mount ~/.docker into Kaniko — no separate auth config step needed.
-- name: Build and push with Kaniko
-  run: |
-    docker run --rm \
-      -v "$GITHUB_WORKSPACE:/workspace" \
-      -v "$HOME/.docker:/kaniko/.docker:ro" \
-      gcr.io/kaniko-project/executor:latest \
-        --context /workspace \
-        --dockerfile /workspace/Dockerfile \
-        --destination "$OCIR_URL/myapp:$GITHUB_SHA" \
-        --destination "$OCIR_URL/myapp:latest"
+# BuildKit listens on the pod loopback: 127.0.0.1 is only reachable from the runner container.
+- name: Use the BuildKit sidecar
+  run: docker buildx create --name remote --driver remote --use tcp://127.0.0.1:1234
+
+- name: Build and push
+  uses: docker/build-push-action@v7
+  with:
+    context: .
+    push: true
+    tags: ${{ env.OCIR_URL }}/myapp:${{ github.sha }}
+    cache-from: type=registry,ref=${{ env.OCIR_URL }}/myapp/cache:buildcache
+    cache-to: type=registry,ref=${{ env.OCIR_URL }}/myapp/cache:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
 ```
 
-> Docker and Podman are pre-installed on `ubuntu-latest` runners. See [`examples/github/ocir-push.yml`](examples/github/ocir-push.yml) for complete working jobs for all three tools.
+The address and the sidecar come from your runner pod spec (for example an init container with `restartPolicy: Always` running `buildkitd --addr tcp://127.0.0.1:1234 --oci-worker-no-process-sandbox`); if the runner already creates the builder at start, skip the `buildx create` step. The TCP endpoint has no TLS, so keep it on the loopback of the pod. The cache repository `myapp/cache` must exist in OCIR, and `image-manifest=true,oci-mediatypes=true` is what OCIR accepts for registry cache.
+
+> Docker and Podman are pre-installed on `ubuntu-latest` runners. See [`examples/github/ocir-push.yml`](examples/github/ocir-push.yml) for complete jobs with Docker, Podman and BuildKit.
 
 See the [`examples/github/`](examples/github/) folder for more ready-to-use workflow examples.
 
@@ -401,7 +406,7 @@ Provide all six OCI fields shown in the individual-input example when `config_js
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `ocir_login` | `true` | Log in to OCIR with a short-lived bearer token derived from the UPST: exports `OCIR_REGISTRY`, `OCIR_URL`, `DOCKER_CONFIG` and `REGISTRY_AUTH_FILE` to `GITHUB_ENV` and writes `~/.docker/config.json` (readable by docker, podman and kaniko). Set to `false` to skip. |
+| `ocir_login` | `false` | Set to `true` to log in to OCIR with a short-lived bearer token derived from the UPST: exports `OCIR_REGISTRY`, `OCIR_URL`, `DOCKER_CONFIG` and `REGISTRY_AUTH_FILE` to `GITHUB_ENV` and writes `~/.docker/config.json` (readable by docker, podman and buildx). `@v1` had no registry login, so jobs that only call the OCI API need nothing. |
 
 There are no `ocir_username`, `ocir_password` or `ocir_url` inputs, and `ocir_*` keys in `config_json` are ignored.
 
@@ -452,7 +457,7 @@ The [`examples/`](examples/) folder contains:
 - [`gitlab/.gitlab-ci.yml`](examples/gitlab/.gitlab-ci.yml) — GitLab CI example using `scripts/setup-gitlab.sh`
 - [`github/basic-oci-cli.yml`](examples/github/basic-oci-cli.yml) — GitHub Actions OCI CLI example
 - [`github/terraform.yml`](examples/github/terraform.yml) — GitHub Actions Terraform example
-- [`github/ocir-push.yml`](examples/github/ocir-push.yml) — GitHub Actions build-and-push to OCIR with Docker, Podman, or Kaniko
+- [`github/ocir-push.yml`](examples/github/ocir-push.yml) — GitHub Actions build-and-push to OCIR with Docker, Podman or a BuildKit sidecar
 
 ---
 
