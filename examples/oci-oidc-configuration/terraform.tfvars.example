@@ -5,42 +5,25 @@ oci_region         = "<YOUR_OCI_REGION>"        # e.g. sa-saopaulo-1
 oci_tenancy_id     = "<YOUR_TENANCY_OCID>"      # ocid1.tenancy.oc1..aaa...
 oci_compartment_id = "<YOUR_COMPARTMENT_OCID>"  # ocid1.compartment.oc1..aaa...
 
-# GitHub organisation or user (required when ci_platforms includes "github")
-github_owner = "<YOUR_GITHUB_ORG>"              # e.g. my-org
+# Existing Identity Domain that receives the CI identities.
+# oci_identity_domain_name = "Default"
+
+github_owner        = "<YOUR_GITHUB_ORG>"       # e.g. my-org
+github_repositories = ["<YOUR_ORG>/<YOUR_REPO>"]
+# github_refs       = ["refs/heads/main"]       # ["*"] accepts any ref
+# github_organizations  = ["<YOUR_GITHUB_ORG>"]   # every repository; organization secret when equal to github_owner
 
 ci_platforms = ["github"]
-
-github = {
-  branch = "main"
-  repositories = [
-    "<YOUR_ORG>/<YOUR_REPO>",                              # string — uses global branch
-    # { path = "<YOUR_ORG>/app" },                         # object without override — same as string
-    # { path = "<YOUR_ORG>/app", ref = "develop" },        # exact branch override
-    # ref="*" → matched via repository claim (any branch or tag accepted):
-    # { path = "<YOUR_ORG>/release-svc", ref = "*" },
-  ]
-  create_secrets = true   # writes OCI_OIDC_CONFIG to each repo automatically
-}
-
-# Optional — override defaults if needed
-# oci_profile              = "DEFAULT"
-# oci_identity_domain_name = "Default"
-# oci_service_user_name    = "svc-ci-oidc"
-# git_actions_group_name   = "g-ci-oidc"
-# ocir_allowed_repositories = []  # empty = broad push/pull in compartment
 
 # GitLab CI OIDC federation (add "gitlab" to ci_platforms to enable)
 # ci_platforms = ["github", "gitlab"]
 #
-# gitlab = {
+# gitlab_oidc = {
 #   issuer   = "https://gitlab.com"             # override for self-managed GitLab
 #   audience = "https://cloud.oracle.com"
-#   ref      = "main"                           # global default ref
-#   ref_type = "branch"                         # global default ref_type
-#   projects = [
-#     { path = "<YOUR_GROUP>/<YOUR_PROJECT>" },                          # uses global ref/ref_type
-#     { path = "<YOUR_GROUP>/app", ref_type = "branch", ref = "main" }, # exact branch
-#     # ref="*" → matched via project_path claim (any tag or branch accepted):
-#     { path = "<YOUR_GROUP>/release-svc", ref_type = "tag", ref = "*" },
-#   ]
 # }
+#
+# gitlab_project_refs = [
+#   { path = "<YOUR_GROUP>/<YOUR_PROJECT>" },                          # main, branch
+#   { path = "<YOUR_GROUP>/release-svc", ref_type = "tag", ref = "*" }, # any tag
+# ]

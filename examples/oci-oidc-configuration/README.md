@@ -1,56 +1,55 @@
 # OCI OIDC Configuration Example
 
-This Terraform example provisions the OCI Identity Domain application, OIDC identity propagation trust, service user, OCIR auth-token user, group membership, and IAM policy used by `devopshouse/oci-oidc-auth-config`.
+This Terraform example provisions the OCI Identity Domain application, OIDC identity propagation trusts, service user, IAM group and IAM policy used by `devopshouse/oci-oidc-auth-config`. It consumes the [`devopshouse/terraform-oci-oidc-federation`](https://github.com/devopshouse/terraform-oci-oidc-federation) module at `?ref=v2`.
 
 ## Identity Model
 
-The OIDC flow and OCIR auth-token flow use different OCI Identity Domain users:
+The module creates one identity per entry of `service_accounts`. This example defines the account `ci`:
 
-| User | Purpose | User type |
-|------|---------|-----------|
-| `service_user_name` | Impersonated by GitHub Actions or GitLab CI through OIDC identity propagation | Service user |
-| `<service_user_name>-ocir` | Owns the OCIR auth token used by Docker or other registry clients | Non-service user |
+| Resource | Purpose |
+|----------|---------|
+| Service user `svc-<name_prefix>-ci` | Impersonated by GitHub Actions or GitLab CI through OIDC identity propagation |
+| Group `g-<name_prefix>-ci` | Receives the IAM policy |
+| Confidential application `<name_prefix>-ci-app` | Token exchange; its client id and secret go into the CI JSON |
+| Identity Propagation Trusts | Map GitHub and GitLab subjects to the service user |
 
-Do not create the OCIR auth token on `service_user_name`. Identity Domain service users are valid for OIDC impersonation, but auth tokens are supported on regular, non-service users. The OCIR user should be named from the service user name, for example `svc-github-actions-oidc-ocir`, so the relationship is obvious without mixing the two credential models.
+Identity Domain service users cannot hold API keys or auth tokens. A regular user for local runs or for an OCIR docker login goes in `local_user` of the account; it joins the account group.
 
-The OCIR user must be a member of the same IAM group as the OIDC service user. In this example that group is `iam_group_name`, which defaults to `g-github-actions`. Sharing the group lets the OCIR user inherit the registry permissions granted by the IAM policy while the OIDC service user continues to handle CI impersonation.
+## CI JSON
 
-The `terraform-oci-oidc-federation` module creates the OCIR user internally and emits all credentials as part of the unified `ci_oidc_config_json` output.
-
-## OCIR credentials
-
-The OCIR fields inside `ci_oidc_config_json` are a portable representation of the registry login values:
+`ci_oidc_config_json` has the six keys the action reads:
 
 ```json
 {
-  "ocir_username": "<namespace>/<ocir-user-name>",
-  "ocir_password": "<auth-token>",
-  "ocir_url": "ocir.<region>.oci.oraclecloud.com/<namespace>",
-  "ocir_registry": "ocir.<region>.oci.oraclecloud.com"
+  "oci_idcs_endpoint": "https://idcs-<id>.identity.oraclecloud.com",
+  "oci_client_id": "<application-client-id>",
+  "oci_client_secret": "<application-client-secret>",
+  "oci_region": "<region>",
+  "oci_tenancy_id": "<tenancy-ocid>",
+  "oci_compartment_id": "<compartment-ocid>"
 }
 ```
 
-Use these exact formats:
-
-```text
-OCIR_USERNAME=<namespace>/<ocir-user-name>
-OCIR_PASSWORD=<auth-token>
-OCIR_URL=ocir.<region>.oci.oraclecloud.com/<namespace>
-OCIR_REGISTRY=ocir.<region>.oci.oraclecloud.com
-```
-
-`OCIR_URL` and `OCIR_REGISTRY` do not include an `https://` prefix. The registry host is `ocir.<region>.oci.oraclecloud.com`, not the regional OCI API endpoint.
-
-> **Note:** The `devopshouse/terraform-oci-oidc-federation` module emits lowercase keys (`ocir_username`, `ocir_password`, `ocir_url`) as part of the unified `ci_oidc_config_json` output. `ocir_registry` is optional — the action derives it automatically from the URL when absent.
+The action logs in to OCIR with a bearer token obtained through the same identity (UPST); the JSON carries no registry credentials. `ocir` rules in a service account grant the registry permissions through the IAM policy.
 
 ## GitHub and GitLab Handling
 
-**GitHub Actions:** The `terraform-oci-oidc-federation` module writes the `OCI_OIDC_CONFIG` secret to each repository automatically (`github.create_secrets = true` by default). The unified secret contains both OCI and OCIR credentials. No separate OCIR secret is needed.
+**GitHub Actions:** the module provisions the trust. This example sets `create_secrets = false`, so publish `OCI_OIDC_CONFIG` yourself. It is either a flat JSON or a map keyed by service account name. For a map with the `ci` key:
 
-**GitLab CI:** Base64-encode the unified output and store as a masked `OCI_OIDC_CONFIG_B64` CI/CD variable:
+```sh
+terraform output -raw ci_oidc_config_json |
+  jq -c '{ci: .}' |
+  gh secret set OCI_OIDC_CONFIG --repo OWNER/REPO
+```
+
+Use `service_account: ci` in the action. For a flat secret, publish the output as it is and omit `service_account`. For organization trust, publish the secret at organization level and select the repositories that should receive it.
+
+To have `terraform apply` publish the secret, set `create_secrets = true` and list the repositories in `secret_repositories`. The module then writes one flat secret per account (`secret_format = "flat"`, the default) or one `OCI_OIDC_CONFIG` map per repository with every account that targets it (`secret_format = "map"`).
+
+**GitLab CI:** base64-encode the output and store it as a masked `OCI_OIDC_CONFIG_B64` CI/CD variable:
 
 ```sh
 terraform output -raw ci_oidc_config_json | base64 -w0
 ```
 
-`setup-gitlab.sh` and `setup-kaniko-auth.sh` both read `OCI_OIDC_CONFIG_B64` and export `OCIR_USERNAME`, `OCIR_PASSWORD`, `OCIR_URL`, and `OCIR_REGISTRY` automatically. The auth token belongs to `<oci_service_user_name>-ocir`.
+`setup-gitlab.sh` reads `OCI_OIDC_CONFIG_B64` and exports `OCIR_URL`. Set `id_tokens.OCI_OIDC_TOKEN.aud` to the `gitlab_oidc_audience` output.
