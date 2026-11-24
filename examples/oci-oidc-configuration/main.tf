@@ -1,35 +1,45 @@
-# Provision OCI OIDC workload identity federation using the
+# Provision OCI OIDC workload identity federation with the
 # devopshouse/terraform-oci-oidc-federation module.
 #
-# This creates:
-#   - An IDCS service user for OIDC impersonation
-#   - A dedicated OCIR user with an auth token
-#   - An IAM group containing both users
-#   - An IDCS confidential application for the token-exchange flow
-#   - Identity Propagation Trust(s) for GitHub Actions and/or GitLab CI
-#   - An IAM policy granting the group access to the compartment
-#   - The OCI_OIDC_CONFIG GitHub Actions secret in each repository
-#     (when github.create_secrets = true, the default)
+# One service account ("ci") creates:
+#   - a service user, an IAM group and a confidential application for the token exchange
+#   - Identity Propagation Trusts for GitHub Actions and/or GitLab CI
+#   - an IAM policy granting the group access to the compartment
 #
-# After applying, capture the output:
-#   terraform output -raw ci_oidc_config_json
-#
-# For GitHub: the module writes OCI_OIDC_CONFIG to each repo automatically.
-# For GitLab: base64-encode the output and store it as OCI_OIDC_CONFIG_B64:
-#   terraform output -raw ci_oidc_config_json | base64 -w0
+# The OCI_OIDC_CONFIG GitHub secret is published by hand after apply (see README.md).
+# To let the module publish it, set create_secrets = true and secret_repositories on the
+# account, and secret_format = "map" on the module for one map secret per repository.
 
 module "oci_oidc_federation" {
-  source = "git::https://github.com/devopshouse/terraform-oci-oidc-federation.git?ref=main"
+  source = "git::https://github.com/devopshouse/terraform-oci-oidc-federation.git?ref=v2"
 
-  ci_platforms           = var.ci_platforms
-  git_actions_group_name = var.git_actions_group_name
-  github                 = var.github
-  gitlab                 = var.gitlab
+  oci_tenancy_id           = var.oci_tenancy_id
+  oci_compartment_id       = var.oci_compartment_id
+  oci_region               = var.oci_region
+  oci_identity_domain_name = var.oci_identity_domain_name
+  github_owner             = var.github_owner
+  name_prefix              = var.name_prefix
 
-  oci_compartment_id        = var.oci_compartment_id
-  oci_identity_domain_name  = var.oci_identity_domain_name
-  oci_region                = var.oci_region
-  oci_tenancy_id            = var.oci_tenancy_id
-  oci_service_user_name     = var.oci_service_user_name
-  ocir_allowed_repositories = var.ocir_allowed_repositories
+  ci_platforms            = var.ci_platforms
+  default_service_account = "ci"
+  gitlab_oidc             = var.gitlab_oidc
+
+  service_accounts = {
+    ci = {
+      github = {
+        organizations  = var.github_organizations
+        repositories   = [for path in var.github_repositories : { path = path, refs = var.github_refs }]
+        create_secrets = false
+      }
+      gitlab = {
+        project_refs = var.gitlab_project_refs
+      }
+      policies = {
+        compartment = {
+          compartment_id = var.oci_compartment_id
+          statements     = ["manage all-resources in compartment id ${var.oci_compartment_id}"]
+        }
+      }
+    }
+  }
 }
