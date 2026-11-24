@@ -5,7 +5,7 @@
   "description": "Keyless OCI auth via OIDC for GitHub Actions and GitLab CI.",
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && ncc build src/github-action.ts -o dist --source-map --license licenses.txt && ncc build src/cli.ts -o dist-cli --source-map --license licenses-cli.txt && node scripts/copy-cli-dist.mjs",
+    "build": "tsc --noEmit && tsc -p tsconfig.build.json && ncc build build/github-action.js -o dist --source-map --license licenses.txt && ncc build build/cli.js -o dist-cli --source-map --license licenses-cli.txt && node scripts/copy-cli-dist.mjs && rm -rf build",
     "test": "vitest run",
     "test:watch": "vitest"
   },

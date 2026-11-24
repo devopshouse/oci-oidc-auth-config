@@ -11,7 +11,7 @@ const external_node_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import
 const external_node_path_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:path");
 ;// CONCATENATED MODULE: external "node:child_process"
 const external_node_child_process_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:child_process");
-;// CONCATENATED MODULE: ./src/core.ts
+;// CONCATENATED MODULE: ./build/core.js
 
 
 
@@ -504,7 +504,7 @@ function formatClaim(value) {
     return typeof value === 'string' ? value : '';
 }
 
-;// CONCATENATED MODULE: ./src/github-action.ts
+;// CONCATENATED MODULE: ./build/github-action.js
 
 
 const logger = {
