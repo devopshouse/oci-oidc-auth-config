@@ -9,7 +9,7 @@
 #
 # Usage in GitLab CI:
 #   image:
-#     name: ghcr.io/devopshouse/oci-oidc-auth-config/kaniko-oci:v3
+#     name: ghcr.io/devopshouse/kaniko-oci:latest
 #     entrypoint: [""]
 #   script:
 #     - source <(curl -sSfL "$OCI_AUTH_BASE_URL/scripts/setup-gitlab.sh")

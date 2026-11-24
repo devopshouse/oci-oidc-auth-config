@@ -15,7 +15,7 @@
 #
 # Usage in GitLab CI:
 #   image:
-#     name: ghcr.io/devopshouse/oci-oidc-auth-config/podman-oci:v3
+#     name: ghcr.io/devopshouse/podman-oci:latest
 #     entrypoint: [""]
 #   script:
 #     - source <(curl -sSfL "$OCI_AUTH_BASE_URL/scripts/setup-gitlab.sh")
