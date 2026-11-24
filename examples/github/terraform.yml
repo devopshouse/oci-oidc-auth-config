@@ -36,7 +36,7 @@ jobs:
           service_account: ci   # key in the OCI_OIDC_CONFIG map; omit it when the secret is a flat JSON
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "~1.9"
 

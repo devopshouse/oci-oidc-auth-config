@@ -229,7 +229,7 @@ jobs:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
           service_account: ci
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
 
       - run: terraform init -input=false
 
