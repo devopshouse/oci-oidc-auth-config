@@ -19,6 +19,7 @@ const logger = {
 async function run(): Promise<void> {
   const { oci: config } = resolveUnifiedConfig({
     configJson: getInput('config_json') || undefined,
+    serviceAccount: getInput('service_account') || undefined,
     ociValues: {
       oci_idcs_endpoint: getInput('oci_idcs_endpoint') || undefined,
       oci_client_id: getInput('oci_client_id') || undefined,

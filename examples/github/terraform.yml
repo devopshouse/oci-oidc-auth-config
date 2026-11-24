@@ -33,6 +33,7 @@ jobs:
         uses: devopshouse/oci-oidc-auth-config@v2
         with:
           config_json: ${{ secrets.OCI_OIDC_CONFIG }}
+          service_account: ci   # key in the OCI_OIDC_CONFIG map; omit it when the secret is a flat JSON
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3

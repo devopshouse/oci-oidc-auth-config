@@ -9,13 +9,13 @@ branding:
 inputs:
   config_json:
     description: >
-      JSON string with all OCI parameters in a single unified blob
-      (the OCI_OIDC_CONFIG secret emitted by terraform-oci-oidc-federation).
-      Required OCI keys: oci_idcs_endpoint, oci_client_id, oci_client_secret,
-      oci_region, oci_tenancy_id, oci_compartment_id.
-      Any ocir_* keys in the blob are ignored — OCIR auth is now performed
-      automatically via a short-lived bearer token (see ocir_login).
+      Flat OCI configuration JSON or a map of service account names to OCI configurations
+      (the OCI_OIDC_CONFIG secret). Use service_account to select an entry from a map.
       When provided, individual OCI inputs are ignored.
+    required: false
+    default: ''
+  service_account:
+    description: Exact key in config_json for a service account map. Omit for flat JSON or individual inputs.
     required: false
     default: ''
   oci_idcs_endpoint:

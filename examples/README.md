@@ -20,28 +20,31 @@ This folder contains working examples that demonstrate how to use
 
 ### 1. Provision the OCI prerequisites
 
-Use the [`oci-oidc-configuration/`](oci-oidc-configuration/) Terraform module to create the IDCS confidential application, service users, identity propagation trusts and IAM policies in your tenancy.
+Use the [`oci-oidc-configuration/`](oci-oidc-configuration/) Terraform example to create the IDCS confidential application, service users, identity propagation trusts and IAM policies in your tenancy.
 
-After applying, the module writes the secret (`OCI_OIDC_CONFIG` by default) to each repository listed in `service_accounts[*].github.secret_repositories`. To retrieve the value manually:
+After applying, publish `OCI_OIDC_CONFIG`. The secret is either a flat JSON (one account) or a map keyed by service account name; the workflows in [`github/`](github/) assume a map with a `ci` key:
 
 ```sh
-terraform output -raw ci_oidc_config_json
+terraform output -raw ci_oidc_config_json |
+  jq -c '{ci: .}' |
+  gh secret set OCI_OIDC_CONFIG --repo OWNER/REPO
 ```
 
-For GitLab CI, base64-encode it and store as `OCI_OIDC_CONFIG_B64`:
+For a flat secret, publish the output as it is and remove `service_account` from the workflow:
+
+```sh
+terraform output -raw ci_oidc_config_json |
+  gh secret set OCI_OIDC_CONFIG --repo OWNER/REPO
+```
+
+For GitLab CI, base64-encode the single-account output and store it as the masked `OCI_OIDC_CONFIG_B64` variable:
 
 ```sh
 terraform output -raw ci_oidc_config_json | base64 -w0
 ```
 
-The secret contains the OCI connection fields only; OCIR login uses a short-lived bearer token derived from the UPST, so no OCIR secret is needed.
+See the main [README](../README.md#2-create-the-oci_oidc_config-secret) for the two formats, organization secrets and how the account is selected.
 
-### 2. Set the `OCI_OIDC_CONFIG` secret
-
-For GitHub Actions, the module sets the secret automatically. For GitLab, add `OCI_OIDC_CONFIG_B64` as a masked CI/CD variable.
-
-See the main [README](../README.md#prerequisites) for full details.
-
-### 3. Copy a workflow
+### 2. Copy a workflow
 
 Pick one of the example workflows from the [`github/`](github/) folder and copy it to `.github/workflows/` in your repository, then adjust the paths and branch names to match your project.
