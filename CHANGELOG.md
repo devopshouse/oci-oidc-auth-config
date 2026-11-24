@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/devopshouse/oci-oidc-auth-config/compare/v2.0.0...v2.0.1) (2026-11-24)
+
+
+### 🐛 Bug Fixes
+
+* compile with tsc before ncc to support TypeScript 7 ([26137ac](https://github.com/devopshouse/oci-oidc-auth-config/commit/26137ac03cd74dfeaba30897db515d6aa75106ec))
+
 ## [2.0.0](https://github.com/devopshouse/oci-oidc-auth-config/compare/v1.0.4...v2.0.0) (2026-11-24)
 
 
